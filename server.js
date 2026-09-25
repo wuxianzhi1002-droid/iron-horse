@@ -229,7 +229,7 @@ function writeAudit(actorId, action, objectType, objectId, details = {}) {
 }
 
 function captureSchedule(weekId) {
-  const shifts = db.prepare(`SELECT s.id,s.day_index AS dayIndex,s.period,s.starts_at AS startsAt,s.ends_at AS endsAt,u.id AS userId,u.display_name AS name,u.is_tech AS isTech FROM shifts s LEFT JOIN assignments a ON a.shift_id=s.id LEFT JOIN users u ON u.id=a.user_id AND u.active=1 WHERE s.week_id=? ORDER BY s.day_index,CASE s.period WHEN '上午' THEN 0 ELSE 1 END,a.position,u.display_name`).all(weekId);
+  const shifts = db.prepare(`SELECT s.id,s.day_index AS dayIndex,s.period,s.starts_at AS startsAt,s.ends_at AS endsAt,u.id AS userId,u.display_name AS name,u.is_tech AS isTech FROM shifts s LEFT JOIN assignments a ON a.shift_id=s.id LEFT JOIN users u ON u.id=a.user_id AND u.active=1 WHERE s.week_id=? ORDER BY s.day_index,CASE s.period WHEN '上午' THEN 0 ELSE 1 END,u.is_tech DESC,a.position,u.display_name`).all(weekId);
   const grouped = new Map();
   for (const row of shifts) {
     if (!grouped.has(row.id)) grouped.set(row.id, { id: row.id, dayIndex: row.dayIndex, day: DAYS[row.dayIndex], period: row.period, startsAt: row.startsAt, endsAt: row.endsAt, members: [] });
@@ -469,7 +469,7 @@ async function handleApi(req, res, url) {
   if (method === "POST" && publishMatch) {
     const weekId = Number(publishMatch[1]);
     if (!db.prepare("SELECT id FROM weeks WHERE id=?").get(weekId)) throw Object.assign(new Error("找不到该周次"), { status: 404 });
-    const publicationId = publishSnapshot(weekId, user.id);
+    const publicationId = db.transaction(() => publishSnapshot(weekId, user.id))();
     writeAudit(user.id, "publish_week", "week", weekId, { publicationId });
     return send(res, 200, { ok: true, publicationId });
   }
