@@ -542,17 +542,19 @@ async function handleApi(req, res, url) {
   return send(res, 404, { error: "找不到接口" });
 }
 
-const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
-const PUBLIC_FILES = new Set(["index.html", "styles.css", "app.js"]);
+const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
+const PUBLIC_FILES = new Set(["index.html", "styles.css", "app.js", "sw.js", "manifest.webmanifest", "icons/iron-horse.svg", "icons/iron-horse-180.png", "icons/iron-horse-192.png", "icons/iron-horse-512.png"]);
 function serveStatic(req, res, pathname) {
   const requested = decodeURIComponent(pathname === "/" ? "/index.html" : pathname);
-  const relative = normalize(requested).replace(/^[/\\]+/, "");
+  const relative = normalize(requested).replace(/^[/\\]+/, "").replaceAll("\\", "/");
   if (!PUBLIC_FILES.has(relative)) return send(res, 404, { error: "找不到页面" });
   const target = resolve(ROOT, relative);
   if (!target.startsWith(resolve(ROOT) + sep)) return send(res, 403, { error: "禁止访问" });
   if (!existsSync(target)) return send(res, 404, { error: "找不到页面" });
   const content = readFileSync(target);
-  res.writeHead(200, { "Content-Type": MIME[extname(target)] || "application/octet-stream", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" });
+  const headers = { "Content-Type": MIME[extname(target)] || "application/octet-stream", "Cache-Control": relative === "sw.js" || relative === "manifest.webmanifest" || relative === "index.html" ? "no-cache" : "public, max-age=3600", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" };
+  if (relative === "sw.js") headers["Service-Worker-Allowed"] = "/";
+  res.writeHead(200, headers);
   res.end(content);
 }
 
