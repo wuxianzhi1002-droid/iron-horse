@@ -221,7 +221,7 @@ function weekPayload(weekId, user) {
   if (!week) throw Object.assign(new Error("找不到该周次"), { status: 404 });
   const shifts = db.prepare(`
     SELECT s.id, s.day_index AS dayIndex, s.period, s.starts_at AS startsAt, s.ends_at AS endsAt,
-      u.id AS userId, u.display_name AS name, u.is_tech AS isTech
+      u.id AS userId, u.display_name AS name, u.is_tech AS isTech, a.position AS position
     FROM shifts s LEFT JOIN assignments a ON a.shift_id=s.id
     LEFT JOIN users u ON u.id=a.user_id AND u.active=1
     WHERE s.week_id=? ORDER BY s.day_index, CASE s.period WHEN '上午' THEN 0 ELSE 1 END, a.position, u.display_name
@@ -229,8 +229,9 @@ function weekPayload(weekId, user) {
   const grouped = new Map();
   for (const row of shifts) {
     if (!grouped.has(row.id)) grouped.set(row.id, { id: row.id, dayIndex: row.dayIndex, day: DAYS[row.dayIndex], period: row.period, startsAt: row.startsAt, endsAt: row.endsAt, members: [] });
-    if (row.userId) grouped.get(row.id).members.push({ id: row.userId, name: row.name, isTech: Boolean(row.isTech) });
+    if (row.userId) grouped.get(row.id).members.push({ id: row.userId, name: row.name, isTech: Boolean(row.isTech), position: row.position });
   }
+  for (const shift of grouped.values()) shift.techSlotOpen = !shift.members.some(member => member.isTech && member.position === 0);
   const ownEnrollment = db.prepare("SELECT slots_json AS slotsJson, expected_count AS expectedCount, note, updated_at AS updatedAt FROM enrollments WHERE week_id=? AND user_id=?").get(weekId, user.id);
   const base = { id: week.id, weekStart: week.week_start, enrollmentDeadline: week.enrollment_deadline, status: week.status };
   const latestPublication = db.prepare("SELECT snapshot_json AS snapshotJson FROM schedule_publications WHERE week_id=? ORDER BY id DESC LIMIT 1").get(weekId);
@@ -254,12 +255,13 @@ function writeAudit(actorId, action, objectType, objectId, details = {}) {
 }
 
 function captureSchedule(weekId) {
-  const shifts = db.prepare(`SELECT s.id,s.day_index AS dayIndex,s.period,s.starts_at AS startsAt,s.ends_at AS endsAt,u.id AS userId,u.display_name AS name,u.is_tech AS isTech FROM shifts s LEFT JOIN assignments a ON a.shift_id=s.id LEFT JOIN users u ON u.id=a.user_id AND u.active=1 WHERE s.week_id=? ORDER BY s.day_index,CASE s.period WHEN '上午' THEN 0 ELSE 1 END,u.is_tech DESC,a.position,u.display_name`).all(weekId);
+  const shifts = db.prepare(`SELECT s.id,s.day_index AS dayIndex,s.period,s.starts_at AS startsAt,s.ends_at AS endsAt,u.id AS userId,u.display_name AS name,u.is_tech AS isTech,a.position AS position FROM shifts s LEFT JOIN assignments a ON a.shift_id=s.id LEFT JOIN users u ON u.id=a.user_id AND u.active=1 WHERE s.week_id=? ORDER BY s.day_index,CASE s.period WHEN '上午' THEN 0 ELSE 1 END,a.position,u.display_name`).all(weekId);
   const grouped = new Map();
   for (const row of shifts) {
     if (!grouped.has(row.id)) grouped.set(row.id, { id: row.id, dayIndex: row.dayIndex, day: DAYS[row.dayIndex], period: row.period, startsAt: row.startsAt, endsAt: row.endsAt, members: [] });
-    if (row.userId) grouped.get(row.id).members.push({ id: row.userId, name: row.name, isTech: Boolean(row.isTech) });
+    if (row.userId) grouped.get(row.id).members.push({ id: row.userId, name: row.name, isTech: Boolean(row.isTech), position: row.position });
   }
+  for (const shift of grouped.values()) shift.techSlotOpen = !shift.members.some(member => member.isTech && member.position === 0);
   return [...grouped.values()];
 }
 
@@ -279,40 +281,64 @@ function allShifts(weekId) {
 }
 
 function autoArrange(weekId) {
-  const people = db.prepare("SELECT u.id,u.display_name AS name,u.is_tech AS isTech,e.expected_count AS expectedCount,e.slots_json AS slotsJson FROM enrollments e JOIN users u ON u.id=e.user_id WHERE e.week_id=? AND u.active=1").all(weekId).map(person => ({ ...person, isTech: Boolean(person.isTech), slots: JSON.parse(person.slotsJson), assigned: new Set() }));
-  const shifts = allShifts(weekId).map(shift => ({ ...shift, members: [] }));
+  const people = db.prepare("SELECT u.id,u.display_name AS name,u.is_tech AS isTech,e.expected_count AS expectedCount,e.slots_json AS slotsJson FROM enrollments e JOIN users u ON u.id=e.user_id WHERE e.week_id=? AND u.active=1 ORDER BY u.id").all(weekId).map(person => ({ ...person, isTech: Boolean(person.isTech), expectedCount: Number(person.expectedCount), slots: JSON.parse(person.slotsJson), assigned: new Set() }));
+  const shifts = allShifts(weekId).map(shift => ({ ...shift, members: [], tech: null }));
   const key = shift => `${DAYS[shift.day_index]}-${shift.period}`;
   const available = (person, shift) => person.slots.includes(key(shift)) && person.assigned.size < person.expectedCount && !shift.members.some(item => item.id === person.id);
-  const sameDayFree = (person, shift) => !person.assigned.has(`${shift.day_index}-上午`) || !person.assigned.has(`${shift.day_index}-下午`);
+  const sameDayFree = (person, shift) => {
+    const otherPeriod = shift.period === "上午" ? "下午" : "上午";
+    return !person.assigned.has(`${shift.day_index}-${otherPeriod}`);
+  };
+
+  // Reserve position 0 for a formal technician before filling regular places.
   for (const shift of shifts) {
     const techs = people.filter(person => person.isTech && available(person, shift));
-    const tech = techs.find(sameDayFree) || techs[0];
-    if (tech) { shift.members.push(tech); tech.assigned.add(`${shift.day_index}-${shift.period}`); }
-  }
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const shift of [...shifts].sort((a, b) => a.members.length - b.members.length)) {
-      if (shift.members.length >= MAX_PER_SHIFT) continue;
-      const candidates = people.filter(person => !person.isTech && available(person, shift));
-      const candidate = candidates.find(sameDayFree) || candidates[0];
-      if (!candidate) continue;
-      shift.members.push(candidate);
-      candidate.assigned.add(`${shift.day_index}-${shift.period}`);
-      changed = true;
+    const preferred = techs.filter(sameDayFree);
+    const candidates = preferred.length ? preferred : techs;
+    const tech = candidates.reduce((best, person) => !best || person.assigned.size < best.assigned.size ? person : best, null);
+    if (tech) {
+      const slot = { ...tech, position: 0 };
+      shift.tech = slot;
+      shift.members.push(slot);
+      tech.assigned.add(`${shift.day_index}-${shift.period}`);
     }
   }
+
+  const remainingCapacity = people.reduce((sum, person) => sum + Math.max(0, person.expectedCount - person.assigned.size), 0);
+  for (let attempt = 0; attempt < remainingCapacity * 2; attempt++) {
+    const availablePeople = people.filter(person => person.assigned.size < person.expectedCount);
+    const eligibleShifts = shifts.filter(shift => shift.members.length - (shift.tech ? 1 : 0) < MAX_PER_SHIFT - 1);
+    if (!availablePeople.length || !eligibleShifts.length) break;
+    eligibleShifts.sort((a, b) => (a.members.length - (a.tech ? 1 : 0)) - (b.members.length - (b.tech ? 1 : 0)));
+    let placed = false;
+    for (const shift of eligibleShifts) {
+      const canAssign = availablePeople.filter(person => available(person, shift));
+      const preferred = canAssign.filter(sameDayFree);
+      const candidates = preferred.length ? preferred : canAssign;
+      const person = candidates.reduce((best, candidate) => {
+        const candidateRatio = candidate.expectedCount > 0 ? candidate.assigned.size / candidate.expectedCount : 1;
+        const bestRatio = best && best.expectedCount > 0 ? best.assigned.size / best.expectedCount : 1;
+        return !best || candidateRatio < bestRatio ? candidate : best;
+      }, null);
+      if (!person) continue;
+      shift.members.push({ ...person, position: shift.members.length + (shift.tech ? 0 : 1) });
+      person.assigned.add(`${shift.day_index}-${shift.period}`);
+      placed = true;
+      break;
+    }
+    if (!placed) break;
+  }
+
   const replace = db.prepare("DELETE FROM assignments WHERE shift_id=?");
   const assign = db.prepare("INSERT INTO assignments(shift_id,user_id,position) VALUES(?,?,?)");
   const commit = transaction(() => {
     for (const shift of shifts) {
       replace.run(shift.id);
-      shift.members.sort((a, b) => Number(b.isTech) - Number(a.isTech) || a.name.localeCompare(b.name, "zh-CN"));
-      shift.members.forEach((person, index) => assign.run(shift.id, person.id, index));
+      shift.members.forEach(person => assign.run(shift.id, person.id, person.position));
     }
   });
   commit();
-  return { shifts: shifts.length, assigned: shifts.reduce((sum, shift) => sum + shift.members.length, 0), uncovered: shifts.filter(shift => !shift.members.length).length, withoutTech: shifts.filter(shift => shift.members.length && !shift.members.some(person => person.isTech)).length };
+  return { shifts: shifts.length, assigned: shifts.reduce((sum, shift) => sum + shift.members.length, 0), uncovered: shifts.filter(shift => !shift.members.length).length, withoutTech: shifts.filter(shift => !shift.tech).length };
 }
 
 async function handleApi(req, res, url) {
@@ -451,15 +477,17 @@ async function handleApi(req, res, url) {
   if (method === "PUT" && shiftMatch) {
     const shiftId = Number(shiftMatch[1]);
     const body = await readJson(req);
-    if (!Array.isArray(body.memberIds) || body.memberIds.length > MAX_PER_SHIFT || new Set(body.memberIds).size !== body.memberIds.length) throw Object.assign(new Error("每班最多 5 人，且成员不能重复"), { status: 400 });
+    if (!Array.isArray(body.memberIds) || body.memberIds.length > MAX_PER_SHIFT || new Set(body.memberIds).size !== body.memberIds.length) throw Object.assign(new Error("成员不能重复；班次最多安排 1 位技师和 4 位其他成员"), { status: 400 });
     const ids = body.memberIds.map(Number);
     const valid = ids.length ? db.prepare(`SELECT id,is_tech FROM users WHERE role='student' AND active=1 AND id IN (${ids.map(() => "?").join(",")})`).all(...ids) : [];
     if (valid.length !== ids.length) throw Object.assign(new Error("成员列表包含无效账号"), { status: 400 });
+    if (ids.length - Number(valid.some(person => person.is_tech)) > MAX_PER_SHIFT - 1) throw Object.assign(new Error("技师位固定留在首位；无论是否排到技师，其他成员最多 4 人"), { status: 400 });
     const ordered = ids.sort((a, b) => Number(valid.find(person => person.id === b).is_tech) - Number(valid.find(person => person.id === a).is_tech));
     const replace = transaction(() => {
       db.prepare("DELETE FROM assignments WHERE shift_id=?").run(shiftId);
       const insert = db.prepare("INSERT INTO assignments(shift_id,user_id,position) VALUES(?,?,?)");
-      ordered.forEach((id, index) => insert.run(shiftId, id, index));
+      const hasTech = ordered.some(id => valid.find(person => person.id === id).is_tech);
+      ordered.forEach((id, index) => insert.run(shiftId, id, hasTech ? index : index + 1));
     });
     if (!db.prepare("SELECT id FROM shifts WHERE id=?").get(shiftId)) throw Object.assign(new Error("找不到该班次"), { status: 404 });
     replace();
@@ -477,9 +505,17 @@ async function handleApi(req, res, url) {
     if (request.status !== "pending") throw Object.assign(new Error("该申请已经处理"), { status: 409 });
     const publicationId = transaction(() => {
       if (body.status === "approved" && request.type === "补班") {
-        const count = db.prepare("SELECT COUNT(*) AS total FROM assignments WHERE shift_id=?").get(request.shift_id).total;
-        if (count >= MAX_PER_SHIFT) throw Object.assign(new Error("该班次已满员，请先调整排班再批准补班"), { status: 409 });
-        db.prepare("INSERT OR IGNORE INTO assignments(shift_id,user_id,position) VALUES(?,?,?)").run(request.shift_id, request.user_id, count);
+        const rows = db.prepare("SELECT a.position,u.is_tech AS isTech FROM assignments a JOIN users u ON u.id=a.user_id WHERE a.shift_id=?").all(request.shift_id);
+        const requester = db.prepare("SELECT is_tech AS isTech FROM users WHERE id=?").get(request.user_id);
+        const hasTechSlot = rows.some(row => row.position === 0 && row.isTech);
+        let position;
+        if (requester.isTech && !hasTechSlot) position = 0;
+        else {
+          const occupied = new Set(rows.filter(row => row.position > 0).map(row => row.position));
+          position = [1, 2, 3, 4].find(slot => !occupied.has(slot));
+          if (position === undefined) throw Object.assign(new Error("该班次的非技师名额已满，请先调整排班再批准补班"), { status: 409 });
+        }
+        db.prepare("INSERT OR IGNORE INTO assignments(shift_id,user_id,position) VALUES(?,?,?)").run(request.shift_id, request.user_id, position);
       }
       if (body.status === "approved" && request.type === "请假") db.prepare("DELETE FROM assignments WHERE shift_id=? AND user_id=?").run(request.shift_id, request.user_id);
       db.prepare("UPDATE requests SET status=?,reviewed_at=datetime('now'),reviewed_by=? WHERE id=?").run(body.status, user.id, requestId);
