@@ -7,7 +7,6 @@
 需要 Node.js 22.13 或更新版本。PowerShell 中运行：
 
 ```powershell
-cd iron-horse-web
 npm start
 ```
 
