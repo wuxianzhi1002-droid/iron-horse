@@ -13,6 +13,21 @@ const sessions = new Map();
 mkdirSync(join(DB_FILE, ".."), { recursive: true });
 const db = new DatabaseSync(DB_FILE);
 db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+
+function transaction(callback) {
+  return (...args) => {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = callback(...args);
+      db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  };
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
@@ -110,7 +125,7 @@ function createWeek(weekStart, deadline = null) {
   const result = db.prepare("INSERT INTO weeks (week_start, enrollment_deadline) VALUES (?, ?)").run(weekStart, cutoff);
   const weekId = Number(result.lastInsertRowid);
   const insertShift = db.prepare("INSERT INTO shifts (week_id, day_index, period, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)");
-  const insertMany = db.transaction(() => {
+  const insertMany = transaction(() => {
     for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
       for (const [period, starts, ends] of [["上午", "08:00", "12:00"], ["下午", "13:30", "17:30"]]) {
         insertShift.run(weekId, dayIndex, period, starts, ends);
@@ -279,7 +294,7 @@ function autoArrange(weekId) {
   }
   const replace = db.prepare("DELETE FROM assignments WHERE shift_id=?");
   const assign = db.prepare("INSERT INTO assignments(shift_id,user_id,position) VALUES(?,?,?)");
-  const commit = db.transaction(() => {
+  const commit = transaction(() => {
     for (const shift of shifts) {
       replace.run(shift.id);
       shift.members.sort((a, b) => Number(b.isTech) - Number(a.isTech) || a.name.localeCompare(b.name, "zh-CN"));
@@ -306,7 +321,7 @@ async function handleApi(req, res, url) {
     const { salt, hash } = hashPassword(password);
     let result;
     try {
-      result = db.transaction(() => {
+      result = transaction(() => {
         if (db.prepare("SELECT id FROM users LIMIT 1").get()) throw Object.assign(new Error("管理员已初始化，请直接登录"), { status: 409 });
         return db.prepare("INSERT INTO users(username,display_name,role,password_hash,salt) VALUES(?,?,'admin',?,?)").run(username, name, hash, salt);
       })();
@@ -431,7 +446,7 @@ async function handleApi(req, res, url) {
     const valid = ids.length ? db.prepare(`SELECT id,is_tech FROM users WHERE role='student' AND active=1 AND id IN (${ids.map(() => "?").join(",")})`).all(...ids) : [];
     if (valid.length !== ids.length) throw Object.assign(new Error("成员列表包含无效账号"), { status: 400 });
     const ordered = ids.sort((a, b) => Number(valid.find(person => person.id === b).is_tech) - Number(valid.find(person => person.id === a).is_tech));
-    const replace = db.transaction(() => {
+    const replace = transaction(() => {
       db.prepare("DELETE FROM assignments WHERE shift_id=?").run(shiftId);
       const insert = db.prepare("INSERT INTO assignments(shift_id,user_id,position) VALUES(?,?,?)");
       ordered.forEach((id, index) => insert.run(shiftId, id, index));
@@ -450,7 +465,7 @@ async function handleApi(req, res, url) {
     const request = db.prepare("SELECT * FROM requests WHERE id=?").get(requestId);
     if (!request) throw Object.assign(new Error("找不到该申请"), { status: 404 });
     if (request.status !== "pending") throw Object.assign(new Error("该申请已经处理"), { status: 409 });
-    const publicationId = db.transaction(() => {
+    const publicationId = transaction(() => {
       if (body.status === "approved" && request.type === "补班") {
         const count = db.prepare("SELECT COUNT(*) AS total FROM assignments WHERE shift_id=?").get(request.shift_id).total;
         if (count >= MAX_PER_SHIFT) throw Object.assign(new Error("该班次已满员，请先调整排班再批准补班"), { status: 409 });
@@ -469,7 +484,7 @@ async function handleApi(req, res, url) {
   if (method === "POST" && publishMatch) {
     const weekId = Number(publishMatch[1]);
     if (!db.prepare("SELECT id FROM weeks WHERE id=?").get(weekId)) throw Object.assign(new Error("找不到该周次"), { status: 404 });
-    const publicationId = db.transaction(() => publishSnapshot(weekId, user.id))();
+    const publicationId = transaction(() => publishSnapshot(weekId, user.id))();
     writeAudit(user.id, "publish_week", "week", weekId, { publicationId });
     return send(res, 200, { ok: true, publicationId });
   }
