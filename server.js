@@ -513,7 +513,7 @@ function serveStatic(req, res, pathname) {
   const relative = normalize(requested).replace(/^[/\\]+/, "");
   if (!PUBLIC_FILES.has(relative)) return send(res, 404, { error: "找不到页面" });
   const target = resolve(ROOT, relative);
-  if (!target.startsWith(ROOT + sep)) return send(res, 403, { error: "禁止访问" });
+  if (!target.startsWith(resolve(ROOT) + sep)) return send(res, 403, { error: "禁止访问" });
   if (!existsSync(target)) return send(res, 404, { error: "找不到页面" });
   const content = readFileSync(target);
   res.writeHead(200, { "Content-Type": MIME[extname(target)] || "application/octet-stream", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" });
