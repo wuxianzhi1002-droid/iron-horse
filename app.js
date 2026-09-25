@@ -4,6 +4,10 @@ const toastNode = document.querySelector("#toast");
 const DAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const state = { user: null, needsSetup: false, page: "", bootstrap: null, weekId: null, requestFilter: "pending" };
 
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+}
+
 const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const localDay = (iso, offset = 0) => {
   const date = new Date(`${iso}T12:00:00Z`);
