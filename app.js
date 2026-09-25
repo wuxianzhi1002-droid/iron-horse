@@ -111,10 +111,15 @@ function renderPage() {
   }
 }
 
+function techSlotOpen(shift) {
+  if (typeof shift.techSlotOpen === "boolean") return shift.techSlotOpen;
+  return !shift.members.some(member => member.isTech && (member.position === undefined || member.position === 0));
+}
+
 function rosterSummary() {
   const shifts = state.bootstrap.schedule;
   const covered = shifts.filter(shift => shift.members.length).length;
-  const techCovered = shifts.filter(shift => shift.members.some(member => member.isTech)).length;
+  const techCovered = shifts.filter(shift => !techSlotOpen(shift)).length;
   return { covered, techCovered, total: shifts.length, people: new Set(shifts.flatMap(shift => shift.members.map(member => member.id))).size };
 }
 
@@ -124,11 +129,11 @@ function scheduleRows(shifts, compact = false) {
     const today = byDay.find(day => day.shifts.length);
     return `<div class="schedule-preview">${(today?.shifts || []).map(shift => previewShift(shift)).join("") || `<div class="empty-state">${state.user.role === "admin" ? "当前还没有排班。" : "管理员发布排班后会显示在这里。"}</div>`}</div>`;
   }
-  return `<div class="schedule-days">${byDay.map(day => `<article class="schedule-day"><div class="schedule-day-head">${day.day}<small>${localDay(state.bootstrap.week.weekStart, day.dayIndex)}</small></div>${day.shifts.map(shift => `<div class="day-shift"><div class="day-shift-label">${shift.period}班 <small>${esc(shift.startsAt)}–${esc(shift.endsAt)}</small></div>${shift.members.length ? shift.members.map(member => `<span class="day-member ${member.isTech ? "tech" : ""}">${member.isTech ? "✳ " : ""}${esc(member.name)}</span>`).join("") : `<span class="day-empty">${state.user.role === "admin" ? "尚未安排" : "暂空"}</span>`}</div>`).join("")}</article>`).join("")}</div>`;
+  return `<div class="schedule-days">${byDay.map(day => `<article class="schedule-day"><div class="schedule-day-head">${day.day}<small>${localDay(state.bootstrap.week.weekStart, day.dayIndex)}</small></div>${day.shifts.map(shift => `<div class="day-shift"><div class="day-shift-label">${shift.period}班 <small>${esc(shift.startsAt)}–${esc(shift.endsAt)}</small></div>${techSlotOpen(shift) ? `<span class="day-empty">技师位空缺</span>` : ""}${shift.members.length ? shift.members.map(member => `<span class="day-member ${member.isTech ? "tech" : ""}">${member.isTech ? "✳ " : ""}${esc(member.name)}</span>`).join("") : `<span class="day-empty">${state.user.role === "admin" ? "尚未安排成员" : "暂空"}</span>`}</div>`).join("")}</article>`).join("")}</div>`;
 }
 
 function previewShift(shift) {
-  return `<div class="preview-shift"><span class="preview-date">${shift.day}<small>${shift.period}班 · ${esc(shift.startsAt)}</small></span><span class="member-pills">${shift.members.length ? shift.members.map(member => `<span class="member-pill ${member.isTech ? "tech" : ""}">${member.isTech ? "✳ " : ""}${esc(member.name)}</span>`).join("") : `<span class="member-pill empty">待安排</span>`}</span><span class="member-total">${shift.members.length} 人</span></div>`;
+  return `<div class="preview-shift"><span class="preview-date">${shift.day}<small>${shift.period}班 · ${esc(shift.startsAt)}</small></span><span class="member-pills">${techSlotOpen(shift) ? `<span class="member-pill empty">技师位空缺</span>` : ""}${shift.members.length ? shift.members.map(member => `<span class="member-pill ${member.isTech ? "tech" : ""}">${member.isTech ? "✳ " : ""}${esc(member.name)}</span>`).join("") : `<span class="member-pill empty">待安排成员</span>`}</span><span class="member-total">${shift.members.length} 人</span></div>`;
 }
 
 function renderAdminDashboard() {
@@ -141,13 +146,14 @@ function renderAdminDashboard() {
 function renderScheduleEditor() {
   const actions = `<button class="secondary-button" data-action="new-week">＋ 新建周次</button><button class="secondary-button" data-action="auto-arrange">✳ 自动排班</button><button class="primary-button" data-action="publish">${state.bootstrap.week.status === "published" ? "再次发布更新" : "发布排班"} →</button>`;
   const versions = state.bootstrap.versions || [];
-  return `${pageHead("把合适的人，安排到合适的班次。", "技师优先；同一同学尽量避免同日连班。每班最多 5 人。", actions)}${state.bootstrap.week.status === "published" ? `<div class="notice"><span class="notice-icon">✓</span><div><strong>本周排班已发布</strong><p>手动修改保存为草稿，点击「再次发布更新」后同学可见；请假和补班审批通过会立即生成新版本。</p></div></div>` : ""}<div class="toolbar"><div class="form-row"><span class="kicker">本周覆盖</span><span class="coverage">${rosterSummary().covered} / ${rosterSummary().total} 班次有人</span></div><button class="secondary-button" data-action="export-schedule">导出 CSV</button></div><div class="shift-grid">${state.bootstrap.schedule.map(shift => shiftEditorCard(shift)).join("")}</div><p class="footnote">正式技师显示在前。点击班次卡片中的「调整人员」选择名单；手动变更仅管理员可见，直到发布更新。</p><section class="card section-card version-panel"><div class="section-head"><div><div class="kicker">PUBLISHED VERSIONS</div><h2>最近发布记录</h2></div></div>${versions.length ? versions.slice(0,5).map(version=>`<div class="audit-row"><span class="audit-mark"></span><div><strong>版本 #${version.id} · ${esc(version.publisher)}</strong><small>${esc(version.createdAt)}</small></div></div>`).join("") : `<div class="empty-state">尚未发布过本周排班。</div>`}</section>`;
+  return `${pageHead("把合适的人，安排到合适的班次。", "正式技师固定首位；同日连班尽量规避。首位无技师时留空，其余最多安排 4 人。", actions)}${state.bootstrap.week.status === "published" ? `<div class="notice"><span class="notice-icon">✓</span><div><strong>本周排班已发布</strong><p>手动修改保存为草稿，点击「再次发布更新」后同学可见；请假和补班审批通过会立即生成新版本。</p></div></div>` : ""}<div class="toolbar"><div class="form-row"><span class="kicker">本周覆盖</span><span class="coverage">${rosterSummary().covered} / ${rosterSummary().total} 班次有人</span></div><button class="secondary-button" data-action="export-schedule">导出 CSV</button></div><div class="shift-grid">${state.bootstrap.schedule.map(shift => shiftEditorCard(shift)).join("")}</div><p class="footnote">正式技师占用首位；无技师班次首位留空，后续 4 个位置安排其他成员。点击「调整人员」可手动修改；未发布的变更仅管理员可见。</p><section class="card section-card version-panel"><div class="section-head"><div><div class="kicker">PUBLISHED VERSIONS</div><h2>最近发布记录</h2></div></div>${versions.length ? versions.slice(0,5).map(version=>`<div class="audit-row"><span class="audit-mark"></span><div><strong>版本 #${version.id} · ${esc(version.publisher)}</strong><small>${esc(version.createdAt)}</small></div></div>`).join("") : `<div class="empty-state">尚未发布过本周排班。</div>`}</section>`;
 }
 
 function shiftEditorCard(shift) {
   const members = state.bootstrap.members.filter(member => member.active);
   const selected = new Set(shift.members.map(member => member.id));
-  return `<article class="card shift-card"><div class="shift-card-head"><div><strong>${shift.day} · ${shift.period}班</strong><small>${esc(shift.startsAt)}–${esc(shift.endsAt)}</small></div><span class="coverage ${shift.members.some(member => member.isTech) ? "" : "warn"}">${shift.members.length} / 5 人${shift.members.some(member => member.isTech) ? " · 技师已排" : " · 无技师"}</span></div><div class="member-pills">${shift.members.map(member => `<span class="member-pill ${member.isTech ? "tech" : ""}">${member.isTech ? "✳ " : ""}${esc(member.name)}</span>`).join("") || `<span class="member-pill empty">尚未安排</span>`}</div><details class="assign-details"><summary>调整人员</summary><div class="member-checks" data-shift-form="${shift.id}">${members.map(member => `<label><input type="checkbox" value="${member.id}" ${selected.has(member.id) ? "checked" : ""}><span>${esc(member.name)}${member.isTech ? " · 技师" : ""}</span></label>`).join("") || `<small>请先添加成员</small>`}</div><div class="shift-card-foot"><span>选择不超过 5 人</span><button class="secondary-button" data-action="save-shift" data-shift="${shift.id}">保存班次</button></div></details></article>`;
+  const hasTech = !techSlotOpen(shift);
+  return `<article class="card shift-card"><div class="shift-card-head"><div><strong>${shift.day} · ${shift.period}班</strong><small>${esc(shift.startsAt)}–${esc(shift.endsAt)}</small></div><span class="coverage ${hasTech ? "" : "warn"}">${shift.members.length} 人${hasTech ? " · 技师首位已排" : " · 技师首位空缺"}</span></div><div class="member-pills">${shift.members.map(member => `<span class="member-pill ${member.isTech ? "tech" : ""}">${member.isTech ? "✳ " : ""}${esc(member.name)}</span>`).join("") || `<span class="member-pill empty">尚未安排成员</span>`}</div><details class="assign-details"><summary>调整人员</summary><div class="member-checks" data-shift-form="${shift.id}">${members.map(member => `<label><input type="checkbox" value="${member.id}" ${selected.has(member.id) ? "checked" : ""}><span>${esc(member.name)}${member.isTech ? " · 技师" : ""}</span></label>`).join("") || `<small>请先添加成员</small>`}</div><div class="shift-card-foot"><span>首位技师；其余最多 4 人</span><button class="secondary-button" data-action="save-shift" data-shift="${shift.id}">保存班次</button></div></details></article>`;
 }
 
 function renderEnrollments() {
@@ -234,7 +240,7 @@ function openWeekDialog() {
 
 function exportSchedule() {
   const rows = [["日期", "班次", "时间", "成员", "正式技师"]];
-  for (const shift of state.bootstrap.schedule) rows.push([`${state.bootstrap.week.weekStart} ${shift.day}`, `${shift.period}班`, `${shift.startsAt}-${shift.endsAt}`, shift.members.map(member=>member.name).join("、"), shift.members.filter(member=>member.isTech).map(member=>member.name).join("、")]);
+  for (const shift of state.bootstrap.schedule) rows.push([`${state.bootstrap.week.weekStart} ${shift.day}`, `${shift.period}班`, `${shift.startsAt}-${shift.endsAt}`, shift.members.map(member=>member.name).join("、"), shift.members.filter(member=>member.isTech && (member.position === undefined || member.position === 0)).map(member=>member.name).join("、")]);
   const csv = rows.map(row => row.map(value => `"${String(value).replaceAll('"','""')}"`).join(",")).join("\r\n");
   const link = document.createElement("a");
   link.href = URL.createObjectURL(new Blob(["\ufeff",csv],{type:"text/csv;charset=utf-8"}));
@@ -312,7 +318,7 @@ async function action(button) {
     else if (name === "auto-arrange") {
       const result = await api("/api/admin/schedule/auto", { method: "POST", body: JSON.stringify({ weekId: state.weekId }) });
       await refreshData();
-      toast(`已安排 ${result.assigned} 人次，${result.uncovered} 个班次为空`);
+      toast(`已安排 ${result.assigned} 人次，${result.uncovered} 个班次无人，${result.withoutTech} 个班次技师首位空缺`);
     } else if (name === "publish") {
       if (!confirm("发布或更新本周排班？普通同学随后可以看到整体排班。")) return;
       await api(`/api/admin/weeks/${state.weekId}/publish`, { method: "POST" });
