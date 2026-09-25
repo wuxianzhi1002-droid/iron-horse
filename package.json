@@ -1,0 +1,14 @@
+{
+  "name": "iron-horse-roster",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "铁马驿站排班与请假补班管理",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
+
