@@ -85,7 +85,7 @@ function renderWeekStrip() {
 function renderTodayShifts() {
   const index = state.selectedDay;
   const shiftLabels = ["上午班", "下午班"];
-  const shifts = [DEMO.weekShifts[index], index === 0 ? [["趙老师", true], ["唐可", false]] : index === 1 ? [["赵老师", true], ["陈一帆", false]] : [["陈老师", true], ["许嘉禾", false]]];
+  const shifts = [DEMO.weekShifts[index], index === 0 ? [["赵老师", true], ["唐可", false]] : index === 1 ? [["赵老师", true], ["陈一帆", false]] : [["陈老师", true], ["许嘉禾", false]]];
   $("#todayShifts").innerHTML = shifts.map((people, slot) => `<div class="shift-row"><div class="shift-time">${slot === 0 ? "08:00" : "13:30"}<small>${shiftLabels[slot]}</small></div><div class="shift-people">${people.map(([name, tech]) => `<span class="person-chip ${tech ? "tech-chip" : ""}"><i class="tiny-avatar">${esc(name[0])}</i>${esc(name)}</span>`).join("")}</div><span class="shift-headcount">${people.length} 人</span></div>`).join("");
 }
 
