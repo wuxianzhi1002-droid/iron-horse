@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#13201d" />
+    <meta name="description" content="铁马驿站排班与考勤管理" />
+    <title>铁马驿站 · 排班中心</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#overview" aria-label="铁马驿站首页">
+          <span class="brand-mark"><span></span><span></span><span></span></span>
+          <span class="brand-copy"><strong>铁马驿站</strong><small>IRON HORSE · OPS</small></span>
+        </a>
+
+        <div class="workspace-label">工作空间</div>
+        <nav class="primary-nav" aria-label="主导航">
+          <button class="nav-item active" data-page="overview"><span class="nav-icon">◫</span><span>总览</span></button>
+          <button class="nav-item" data-page="schedule"><span class="nav-icon">▦</span><span>排班表</span><span class="nav-count">18</span></button>
+          <button class="nav-item" data-page="enrollment"><span class="nav-icon">◷</span><span>空闲报名</span><span class="nav-dot"></span></button>
+          <button class="nav-item" data-page="requests"><span class="nav-icon">⇄</span><span>请假与补班</span><span class="nav-count warning-count" id="requestCount">3</span></button>
+          <button class="nav-item" data-page="attendance"><span class="nav-icon">◉</span><span>考勤记录</span></button>
+        </nav>
+
+        <div class="sidebar-divider"></div>
+        <div class="workspace-label">管理</div>
+        <nav class="primary-nav" aria-label="管理导航">
+          <button class="nav-item admin-only" data-page="members"><span class="nav-icon">♙</span><span>成员管理</span></button>
+          <button class="nav-item admin-only" data-page="settings"><span class="nav-icon">⚙</span><span>规则设置</span></button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="season-card"><div class="season-top"><span class="season-dot"></span>2026 秋季学期</div><div class="season-caption">第 4 周 · 9.28 — 10.04</div><div class="season-progress"><i></i></div><div class="season-foot"><span>报名截止倒计时</span><b>02:14:36</b></div></div>
+          <button class="profile" id="profileButton"><span class="avatar admin-avatar" id="profileAvatar">周</span><span class="profile-copy"><strong id="profileName">周老师</strong><small id="profileRole">排班管理员</small></span><span class="profile-more">···</span></button>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <button class="mobile-menu" id="mobileMenu" aria-label="打开导航">☰</button>
+          <div class="breadcrumb"><span>排班中心</span><span class="crumb-slash">/</span><strong id="breadcrumbCurrent">总览</strong></div>
+          <div class="topbar-actions">
+            <div class="demo-switch"><span class="demo-indicator"></span><label for="roleSelect">体验身份</label><select id="roleSelect" aria-label="切换体验身份"><option value="admin">管理员</option><option value="student">普通同学</option></select></div>
+            <button class="icon-button" id="helpButton" aria-label="帮助">?</button>
+            <button class="icon-button notification-button" id="notificationButton" aria-label="通知">♧<i></i></button>
+          </div>
+        </header>
+
+        <section class="page-view" id="page-overview">
+          <div class="page-heading overview-heading">
+            <div><div class="eyebrow"><span class="eyebrow-line"></span>周一 · 2026 年 9 月 28 日</div><h1>早上好，<span id="greetingName">周老师</span><span class="heading-spark">✳</span></h1><p class="heading-subtitle">新一周的值班安排，一切尽在掌握。</p></div>
+            <div class="heading-actions"><button class="button button-quiet" id="exportButton"><span>↓</span> 导出报表</button><button class="button button-primary admin-only" data-go="schedule"><span>＋</span> 编排本周</button><button class="button button-primary student-only" data-go="enrollment" hidden><span>＋</span> 填写空闲</button></div>
+          </div>
+
+          <div class="notice-strip"><span class="notice-icon">↗</span><div><strong>第 4 周空闲报名进行中</strong><span>请在周五 22:00 前提交下周可值班时间。</span></div><span class="notice-deadline">还剩 2 天</span><button class="notice-link" data-go="enrollment">去报名 <span>→</span></button></div>
+
+          <div class="metrics-grid">
+            <article class="metric-card"><div class="metric-head"><span>本周排班人数</span><span class="metric-icon icon-mint">♙</span></div><div class="metric-value">24<span class="metric-unit">人</span></div><div class="metric-foot"><span class="trend-up">↗ 3</span><span>较上周</span><span class="metric-tail">覆盖 14 个班次</span></div><div class="metric-spark spark-one"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+            <article class="metric-card"><div class="metric-head"><span>待审批申请</span><span class="metric-icon icon-peach">⇄</span></div><div class="metric-value" id="pendingMetric">3<span class="metric-unit">项</span></div><div class="metric-foot"><span class="metric-note">请假 2 · 补班 1</span><span class="metric-tail">最早 10:32 提交</span></div><div class="metric-spark spark-two"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+            <article class="metric-card"><div class="metric-head"><span>本周出勤率</span><span class="metric-icon icon-blue">◉</span></div><div class="metric-value">96.4<span class="metric-unit">%</span></div><div class="metric-foot"><span class="trend-up">↗ 2.1%</span><span>较上周</span><span class="metric-tail">已打卡 27 / 28</span></div><div class="metric-spark spark-three"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+            <article class="metric-card deadline-card"><div class="metric-head"><span>报名截止</span><span class="metric-icon icon-yellow">◷</span></div><div class="metric-value deadline-value">02<span>天</span> 14<span>时</span></div><div class="metric-foot"><span class="metric-note">9 月 25 日 · 22:00</span><span class="metric-tail">已有 18 / 24 人提交</span></div><div class="deadline-progress"><i></i></div></article>
+          </div>
+
+          <div class="content-grid">
+            <section class="panel schedule-panel">
+              <div class="panel-heading"><div><div class="section-kicker">THIS WEEK</div><h2>本周值班安排</h2></div><div class="panel-heading-actions"><span class="live-badge"><i></i> 已发布</span><button class="text-button" data-go="schedule">查看完整排班 <span>→</span></button></div></div>
+              <div class="week-strip" id="weekStrip"></div>
+              <div class="today-shifts" id="todayShifts"></div>
+              <div class="panel-bottom"><span class="legend"><i class="legend-tech"></i>正式技师</span><span class="legend"><i class="legend-member"></i>值班同学</span><span class="availability-hint"><span class="hint-dot"></span>今日班次已确认</span></div>
+            </section>
+
+            <section class="panel approvals-panel">
+              <div class="panel-heading"><div><div class="section-kicker">NEEDS YOUR ATTENTION</div><h2>待处理申请 <span class="heading-count" id="approvalHeadingCount">3</span></h2></div><button class="more-button" data-go="requests" aria-label="查看全部">↗</button></div>
+              <div class="approval-list" id="approvalPreview"></div>
+              <button class="panel-footer-link" data-go="requests">处理全部申请 <span>→</span></button>
+            </section>
+          </div>
+
+          <div class="lower-grid">
+            <section class="panel attendance-panel"><div class="panel-heading"><div><div class="section-kicker">ATTENDANCE · TODAY</div><h2>今日打卡动态</h2></div><span class="device-status"><i></i> 打卡器在线</span></div><div class="attendance-summary"><div class="attendance-number">12<span> / 14</span></div><div class="attendance-summary-copy"><strong>人已完成签到</strong><span>最近一次打卡 <b>10:42</b></span></div><div class="attendance-ring"><div><b>86</b><small>%</small></div></div></div><div class="recent-punches" id="recentPunches"></div><button class="panel-footer-link" data-go="attendance">查看考勤记录 <span>→</span></button></section>
+            <section class="panel activity-panel"><div class="panel-heading"><div><div class="section-kicker">ACTIVITY</div><h2>最近动态</h2></div><button class="more-button" aria-label="更多动态">···</button></div><div class="activity-list"><div class="activity-item"><span class="activity-avatar avatar-lilac">林</span><div><p><strong>林知夏</strong> 提交了请假申请</p><small>周三下午班 · 需要代班</small></div><time>10:32</time></div><div class="activity-item"><span class="activity-avatar avatar-mint">陈</span><div><p><strong>陈一帆</strong> 完成了补班打卡</p><small>周二下午班 · 迟到 2 分钟</small></div><time>09:18</time></div><div class="activity-item"><span class="activity-avatar avatar-peach">周</span><div><p><strong>周老师</strong> 发布了第 3 周排班</p><small>共 14 个班次 · 24 人</small></div><time>昨天</time></div><div class="activity-item"><span class="activity-avatar avatar-blue">许</span><div><p><strong>许嘉禾</strong> 更新了空闲报名</p><small>周六上午、周日下午</small></div><time>昨天</time></div></div><button class="panel-footer-link">查看全部动态 <span>→</span></button></section>
+          </div>
+          <footer class="app-footer"><span>铁马驿站排班中心 <span class="footer-dot">·</span> 2026 秋季学期</span><span>网页体验版 <span class="footer-dot">·</span> 数据保存在当前浏览器</span></footer>
+        </section>
+
+        <section class="page-view subpage" id="page-schedule" hidden>
+          <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span>排班管理 · 2026 秋季</div><h1>每一班，都安排妥当。</h1><p class="heading-subtitle">集中查看班次覆盖、技师安排与成员值班时间。</p></div><div class="heading-actions"><button class="button button-quiet" id="scheduleExport">↓ 导出 Excel</button><button class="button button-primary admin-only" id="publishButton">发布排班 <span>↗</span></button></div></div>
+          <div class="toolbar panel"><div class="week-select-wrap"><span class="toolbar-label">当前周次</span><select id="weekSelect"><option>第 4 周 · 9.28 — 10.04</option><option>第 5 周 · 10.05 — 10.11</option><option>第 3 周 · 9.21 — 9.27</option></select></div><div class="toolbar-right"><span class="coverage-pill"><i></i> 14 / 14 班次已覆盖</span><button class="button button-outline admin-only" id="autoArrange">✳ 自动排班</button></div></div>
+          <section class="panel full-schedule-panel"><div class="full-schedule-heading"><div><div class="section-kicker">WEEKLY ROSTER</div><h2>第 4 周排班表</h2></div><div class="roster-legend"><span><i class="legend-tech"></i>技师</span><span><i class="legend-member"></i>值班同学</span><span class="roster-status"><i></i>已发布</span></div></div><div class="roster-wrap"><table class="roster-table"><thead><tr><th class="shift-col">班次</th><th>周一 <small>09.28</small></th><th>周二 <small>09.29</small></th><th>周三 <small>09.30</small></th><th>周四 <small>10.01</small></th><th>周五 <small>10.02</small></th><th>周六 <small>10.03</small></th><th>周日 <small>10.04</small></th></tr></thead><tbody id="rosterBody"></tbody></table></div><div class="roster-foot"><span>共 <b>14</b> 个班次 · <b>24</b> 人参与</span><span>最后更新：9 月 24 日 18:42 · 周老师</span></div></section>
+          <div class="schedule-note"><span>i</span><div><strong>排班提醒</strong><p>周二下午暂缺正式技师值守。发布前请确认是否需要调整。</p></div><button class="text-button" data-go="enrollment">查看报名 <span>→</span></button></div>
+        </section>
+
+        <section class="page-view subpage" id="page-enrollment" hidden>
+          <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span>每周五 22:00 截止</div><h1>下周，什么时候有空？</h1><p class="heading-subtitle">选出你可以值班的时段，管理员会根据报名统一排班。</p></div><div class="heading-actions"><span class="deadline-pill"><i></i> 距离截止 2 天 14 小时</span></div></div>
+          <div class="enrollment-layout"><section class="panel enrollment-form"><div class="form-section-title"><span class="step-number">01</span><div><h2>选择有空的班次</h2><p>可多选，报名后截止前仍可修改</p></div></div><div class="availability-grid" id="availabilityGrid"></div><div class="form-divider"></div><div class="form-section-title"><span class="step-number">02</span><div><h2>期望值班次数</h2><p>我们会尽量满足你的意愿</p></div></div><div class="count-picker"><button id="countMinus" aria-label="减少">−</button><strong id="expectedCount">2</strong><button id="countPlus" aria-label="增加">＋</button><span>次 / 周</span><span class="count-caption">根据可选时段建议：2–3 次</span></div><label class="field-label" for="enrollmentNote">补充说明 <span>选填</span></label><textarea id="enrollmentNote" placeholder="例如：周三晚上有课，尽量不要安排连续班次…"></textarea><div class="form-actions"><span id="savedLabel">上次保存：尚未提交</span><button class="button button-primary" id="submitEnrollment">提交空闲时间 <span>→</span></button></div></section><aside class="enrollment-aside"><div class="panel enrollment-progress-card"><div class="section-kicker">WEEK 04 · ENROLLMENT</div><h2>报名进度</h2><div class="progress-stat"><strong>18</strong><span>/ 24 人已提交</span></div><div class="progress-bar"><i></i></div><div class="progress-legend"><span>已提交 75%</span><span>还差 6 人</span></div><div class="avatar-stack"><span class="avatar avatar-sm avatar-mint">林</span><span class="avatar avatar-sm avatar-lilac">陈</span><span class="avatar avatar-sm avatar-blue">许</span><span class="avatar avatar-sm avatar-peach">唐</span><span class="avatar avatar-sm avatar-more">+14</span></div><p class="small-muted">已有 18 位同学完成报名</p></div><div class="tip-card"><span class="tip-icon">✳</span><div><strong>小提示</strong><p>报名是你的空闲意愿，最终班次以管理员发布的排班表为准。请假或需要补班时，可在「请假与补班」中提交申请。</p></div></div></aside></div>
+        </section>
+
+        <section class="page-view subpage" id="page-requests" hidden>
+          <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span>申请审批</div><h1>灵活调整，也有迹可循。</h1><p class="heading-subtitle">请假、换班和补班申请统一在这里处理。</p></div><div class="heading-actions"><button class="button button-primary student-only" id="newRequestButton" hidden>＋ 发起申请</button><button class="button button-quiet admin-only" id="requestExport">↓ 导出记录</button></div></div>
+          <div class="request-toolbar panel"><div class="filter-tabs"><button class="filter-tab active" data-filter="pending">待审批 <span id="pendingTabCount">3</span></button><button class="filter-tab" data-filter="approved">已通过</button><button class="filter-tab" data-filter="rejected">已拒绝</button><button class="filter-tab" data-filter="all">全部申请</button></div><div class="filter-search"><span>⌕</span><input id="requestSearch" placeholder="搜索姓名或班次" /></div></div>
+          <div class="request-list" id="requestList"></div>
+        </section>
+
+        <section class="page-view subpage" id="page-attendance" hidden>
+          <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span>考勤中心 · 实时同步</div><h1>每一次到场，都被好好记录。</h1><p class="heading-subtitle">查看打卡记录、处理异常，并跟踪设备连接状态。</p></div><div class="heading-actions"><button class="button button-quiet" id="attendanceExport">↓ 导出记录</button><button class="button button-primary admin-only" id="syncPunches">⟳ 同步打卡器</button></div></div>
+          <div class="device-banner panel"><div class="device-symbol">◉</div><div class="device-copy"><div><strong>铁马驿站 · 前台打卡器</strong><span class="device-connected"><i></i> 在线</span></div><p>设备 ID IH-TERM-001 <span>·</span> 最近同步 2 分钟前 <span>·</span> 今日已接收 27 条记录</p></div><button class="button button-outline admin-only" id="deviceSettings">设备设置</button></div>
+          <div class="attendance-kpis"><article class="panel attendance-kpi"><span>今日应到</span><strong>14 <small>人</small></strong><div>上午 8 人 · 下午 6 人</div></article><article class="panel attendance-kpi"><span>已签到</span><strong>12 <small>人</small></strong><div class="kpi-good">完成率 85.7%</div></article><article class="panel attendance-kpi"><span>迟到</span><strong class="kpi-warn">1 <small>人</small></strong><div>平均迟到 2 分钟</div></article><article class="panel attendance-kpi"><span>待处理异常</span><strong class="kpi-alert" id="exceptionCount">2 <small>条</small></strong><div>缺卡 1 · 班次不匹配 1</div></article></div>
+          <section class="panel attendance-table-panel"><div class="table-panel-heading"><div><div class="section-kicker">PUNCH LOG</div><h2>今日打卡记录</h2></div><div class="attendance-filters"><select><option>2026 年 9 月 28 日</option><option>最近 7 天</option></select><select><option>全部班次</option><option>上午班</option><option>下午班</option></select></div></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>成员</th><th>计划班次</th><th>签到时间</th><th>签退时间</th><th>设备来源</th><th>考勤状态</th></tr></thead><tbody id="attendanceRows"></tbody></table></div><div class="table-pagination"><span>显示 1–6 条，共 14 条记录</span><div><button disabled>←</button><button class="page-current">1</button><button>2</button><button>3</button><button>→</button></div></div></section>
+        </section>
+
+        <section class="page-view subpage" id="page-members" hidden><div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span>团队管理</div><h1>一起值班的每一个人。</h1><p class="heading-subtitle">管理成员资料、技师资格和系统角色。</p></div><button class="button button-primary" id="inviteButton">＋ 邀请成员</button></div><div class="panel placeholder-panel"><span class="placeholder-icon">♙</span><h2>成员名册</h2><p>成员目录、技师资格和角色权限将在这里维护。</p><button class="button button-outline" data-go="schedule">返回排班表</button></div></section>
+        <section class="page-view subpage" id="page-settings" hidden><div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span>排班规则</div><h1>把规则设好，排班更省心。</h1><p class="heading-subtitle">设置周次、报名截止、班次人数与技师要求。</p></div></div><div class="settings-grid"><div class="panel settings-card"><span class="settings-icon">◷</span><h2>报名周期</h2><p>每周开放下周意愿收集</p><div class="setting-line"><span>截止时间</span><strong>每周五 22:00</strong></div></div><div class="panel settings-card"><span class="settings-icon">♙</span><h2>班次要求</h2><p>每个班次最多 5 人</p><div class="setting-line"><span>正式技师</span><strong>每班优先 1 人</strong></div></div><div class="panel settings-card"><span class="settings-icon">◉</span><h2>考勤规则</h2><p>签到时间与排班时段自动匹配</p><div class="setting-line"><span>迟到判定</span><strong>开始后 10 分钟</strong></div></div></div></section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <dialog class="modal" id="requestModal"><form method="dialog" id="requestForm"><div class="modal-head"><div><div class="section-kicker">NEW REQUEST</div><h2>发起班次申请</h2></div><button class="modal-close" value="cancel" aria-label="关闭">×</button></div><label class="field-label" for="requestType">申请类型</label><select id="requestType"><option value="请假">请假</option><option value="换班">换班</option><option value="补班">补班</option></select><label class="field-label" for="requestShift">涉及班次</label><select id="requestShift"><option>周三 下午班</option><option>周四 上午班</option><option>周六 上午班</option></select><label class="field-label" for="requestReason">申请说明</label><textarea id="requestReason" placeholder="请简单说明情况…" required></textarea><div class="modal-actions"><button class="button button-quiet" value="cancel">取消</button><button class="button button-primary" id="submitRequest" value="submit">提交申请</button></div></form></dialog>
+    <script src="app.js"></script>
+  </body>
+</html>
+
