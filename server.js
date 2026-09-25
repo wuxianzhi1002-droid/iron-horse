@@ -137,6 +137,16 @@ function createWeek(weekStart, deadline = null) {
 }
 
 if (!db.prepare("SELECT id FROM weeks LIMIT 1").get()) createWeek(defaultWeekStart());
+for (const week of db.prepare("SELECT id FROM weeks w WHERE NOT EXISTS (SELECT 1 FROM shifts s WHERE s.week_id=w.id)").all()) {
+  transaction(() => {
+    const insertShift = db.prepare("INSERT INTO shifts (week_id, day_index, period, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)");
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+      for (const [period, starts, ends] of [["上午", "08:00", "12:00"], ["下午", "13:30", "17:30"]]) {
+        insertShift.run(week.id, dayIndex, period, starts, ends);
+      }
+    }
+  })();
+}
 
 function hashPassword(password, salt = randomBytes(16).toString("hex")) {
   return { salt, hash: scryptSync(password, salt, 64).toString("hex") };
