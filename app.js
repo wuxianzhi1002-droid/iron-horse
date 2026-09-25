@@ -207,7 +207,7 @@ function openRequestDialog() {
   const mine = shift => shift.members.some(member => member.id === state.user.id);
   const candidates = type => shifts.filter(shift => type === "请假" ? mine(shift) : !mine(shift) && shift.members.length < 5);
   const options = type => candidates(type).map(shift=>`<option value="${shift.id}">${shift.day} ${shift.period}班 · ${shift.startsAt}</option>`).join("");
-  dialog.innerHTML = `<form data-form="request"><h2>发起请假或补班申请</h2><p>请假获批后将从整体排班中移除你；补班获批后会加入对应班次。</p><label class="field"><span>申请类型</span><select name="type"><option>请假</option><option>补班</option></select></label><label class="field"><span>涉及班次</span><select name="shiftId" required>${options("请假")}</select></label><label class="field"><span>申请说明</span><textarea name="reason" required maxlength="500" placeholder="请简要说明原因"></textarea></label><div class="dialog-actions"><button type="button" class="secondary-button" data-action="close-dialog">取消</button><button type="submit" class="primary-button" ${candidates("请假").length ? "" : "disabled"}>提交申请</button></div></form>`;
+  dialog.innerHTML = `<form data-form="request"><h2>发起请假或补班申请</h2><p>请假获批后将从整体排班中移除你；补班获批后会加入对应班次。</p><label class="field"><span>申请类型</span><select name="type"><option>请假</option><option>补班</option></select></label><label class="field"><span>涉及班次</span><select name="shiftId" required>${options("请假")}</select></label><label class="field"><span>申请说明</span><textarea name="reason" required maxlength="500" placeholder="请简要说明原因"></textarea></label><div class="dialog-actions"><button type="button" class="secondary-button" data-action="close-dialog">取消</button><button type="submit" class="primary-button" ${candidates("请假").length || candidates("补班").length ? "" : "disabled"}>提交申请</button></div></form>`;
   const form = dialog.querySelector("form");
   form.querySelector('[name="type"]').addEventListener("change", event => {
     const list = candidates(event.target.value);
@@ -215,7 +215,7 @@ function openRequestDialog() {
     form.querySelector('[type="submit"]').disabled = !list.length;
     form.querySelector('[type="submit"]').textContent = list.length ? "提交申请" : "没有可申请的班次";
   });
-  if (!candidates("请假").length) form.querySelector('[type="submit"]').textContent = "没有可申请的班次";
+  if (!candidates("请假").length && !candidates("补班").length) form.querySelector('[type="submit"]').textContent = "没有可申请的班次";
   dialog.showModal();
 }
 
