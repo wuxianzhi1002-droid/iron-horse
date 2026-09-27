@@ -28,6 +28,13 @@ const fmtDateTime = value => {
   return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZone: "Asia/Shanghai" }).format(date);
 };
 const shiftLabel = shift => shift.startsAt === "16:30" ? "下午班" : shift.startsAt === "18:30" ? "晚班" : `${shift.period}班`;
+const enrollmentSlotLabel = slot => {
+  const separator = slot.lastIndexOf("-");
+  if (separator < 0) return slot;
+  const period = slot.slice(separator + 1);
+  const label = period === "下午" ? "下午班" : period === "上午" ? "晚班" : period;
+  return `${slot.slice(0, separator)}-${label}`;
+};
 
 async function api(path, options = {}) {
   const response = await fetch(path, { credentials: "same-origin", ...options, headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers } });
@@ -220,7 +227,7 @@ function renderEnrollments() {
 }
 
 function enrollmentCard(item) {
-  return `<article class="card enrollment-card"><span class="user-avatar">${esc(item.name.slice(0, 1))}</span><div class="enrollment-card-main"><div class="enrollment-name"><strong>${esc(item.name)}</strong>${item.isTech ? `<span class="tech-badge">正式技师</span>` : ""}</div><div class="enrollment-sub">期望 ${item.expectedCount} 次 · 更新于 ${esc(fmtDateTime(item.updatedAt))}</div><div class="slot-tags">${item.slots.map(slot => `<span class="slot-tag">${esc(slot)}</span>`).join("")}</div>${item.note ? `<div class="enrollment-sub">备注：${esc(item.note)}</div>` : ""}</div><span class="enrollment-count">${item.slots.length} 时段</span></article>`;
+  return `<article class="card enrollment-card"><span class="user-avatar">${esc(item.name.slice(0, 1))}</span><div class="enrollment-card-main"><div class="enrollment-name"><strong>${esc(item.name)}</strong>${item.isTech ? `<span class="tech-badge">正式技师</span>` : ""}</div><div class="enrollment-sub">期望 ${item.expectedCount} 次 · 更新于 ${esc(fmtDateTime(item.updatedAt))}</div><div class="slot-tags">${item.slots.map(slot => `<span class="slot-tag">${esc(enrollmentSlotLabel(slot))}</span>`).join("")}</div>${item.note ? `<div class="enrollment-sub">备注：${esc(item.note)}</div>` : ""}</div><span class="enrollment-count">${item.slots.length} 时段</span></article>`;
 }
 
 function requestCard(request) {
