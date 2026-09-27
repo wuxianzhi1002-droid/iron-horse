@@ -1,4 +1,4 @@
-import { parseAttendanceReport } from "./attendance-import.js?v=1";
+import { parseAttendanceReport } from "./attendance-import.js?v=2";
 
 const root = document.querySelector("#root");
 const dialog = document.querySelector("#dialog");
@@ -252,24 +252,33 @@ function renderAttendance() {
   const attendance = state.bootstrap.attendance || { imported: null, rows: [] };
   const members = state.bootstrap.members;
   const weekdays = Array.from({ length: 7 }, (_, index) => localDay(state.bootstrap.week.weekStart, index));
-  const historical = state.bootstrap.weeks.filter(week => week.hasAttendance);
+  const history = [...(state.bootstrap.attendanceHistory || [])].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const selected = state.attendanceSelectedWeeks || new Set(history.map(week => week.id));
+  const selectedHistory = history.filter(week => selected.has(week.id));
+  const summaryMembers = new Map();
+  for (const week of selectedHistory) for (const member of week.members) {
+    if (!summaryMembers.has(member.userId)) summaryMembers.set(member.userId, { ...member, hours: new Map(), totalHours: 0 });
+    const person = summaryMembers.get(member.userId);
+    person.hours.set(week.id, member.hours);
+    person.totalHours += Number(member.hours);
+  }
   const preview = state.attendancePreview;
   const importedLabel = attendance.imported
     ? `最近导入：${esc(attendance.imported.sourceName)} · ${esc(fmtDateTime(attendance.imported.importedAt))}`
-    : "本周尚未导入工时数据。";
-  return `${pageHead("管理员工时统计", "仅管理员可查看。导入每周考勤表后，系统只记录所选周次的“正班”每日时长；加班时长和月合计不会计入。")}
+    : "此周次尚未导入工时数据。";
+  const previewWeek = preview?.weeks.find(week => week.weekStart === preview.anchorWeekStart);
+  return `${pageHead("管理员工时统计", "仅管理员可查看。选中报表覆盖到的一周并导入后，系统会自动按周一至周日拆分整张报表，只累计“正班”每日时长。")}
     <section class="card section-card attendance-import-card">
-      <div class="section-head"><div><div class="kicker">IMPORT REGULAR HOURS</div><h2>导入所选周次工时</h2><p>当前选择：${esc(fmtDate(state.bootstrap.week.weekStart))} 起的一周。原表日期栏只有“日 + 星期”，请指定报表第一天，系统会核对日期和星期。</p></div></div>
+      <div class="section-head"><div><div class="kicker">IMPORT REGULAR HOURS</div><h2>导入并自动拆分多周工时</h2><p>定位周次：${esc(fmtDate(state.bootstrap.week.weekStart))} 起。原表只有日期和星期，系统会以此周为锚点自动识别整张表的年月和所有完整周次。</p></div></div>
       <form data-form="attendance-preview" class="attendance-form">
-        <label class="field"><span>报表第一天</span><input name="reportStartDate" type="date" required></label>
         <label class="field attendance-file-field"><span>考勤统计表（.xls / .html）</span><input name="report" type="file" accept=".xls,.html,.htm,text/html" required></label>
         <button class="primary-button" type="submit">读取并预览 →</button>
       </form>
-      <p class="footnote">预览阶段只在当前页面读取文件，不会上传；确认导入后才保存本周数据。重复导入会保留历史批次，当前统计切换为最新批次。</p>
+      <p class="footnote">只需先在页面顶部选择表格中覆盖到的一个周次。预览时会列出将导入的所有完整周次；不足整周的首尾日期不计入。确认前文件只在当前页面读取。</p>
     </section>
-    ${preview ? `<section class="card section-card"><div class="section-head"><div><div class="kicker">PREVIEW · ${esc(fmtDate(state.bootstrap.week.weekStart))}</div><h2>确认人员匹配后导入</h2><p>读取 ${preview.records.length} 人；仅导入 ${esc(preview.weekDates[0])} 至 ${esc(preview.weekDates[6])} 的正班时长。</p></div></div><div class="table-scroll"><table class="attendance-table"><thead><tr><th>姓名（表格）</th><th>学号</th><th>匹配成员账号</th>${weekdays.map((day,index)=>`<th>${DAY_NAMES[index]}<small>${esc(day)}</small></th>`).join("")}<th>本周合计</th></tr></thead><tbody>${preview.records.map((record,index)=>`<tr><td>${esc(record.name)}</td><td>${esc(record.employeeId)}</td><td><select data-attendance-map="${index}"><option value="">请选择成员</option>${members.map(member=>`<option value="${member.id}" ${Number(record.userId)===member.id?"selected":""}>${esc(member.name)} · ${esc(member.username)}</option>`).join("")}</select></td>${record.daily.map(day=>`<td>${Number(day.hours).toFixed(2)}</td>`).join("")}<td><strong>${record.totalHours.toFixed(2)}</strong></td></tr>`).join("")}</tbody></table></div><div class="attendance-confirm"><button class="primary-button" data-action="import-attendance">确认导入本周工时</button></div></section>` : ""}
+    ${preview ? `<section class="card section-card"><div class="section-head"><div><div class="kicker">PREVIEW · ${preview.weeks.length} WEEKS</div><h2>确认后导入整份报表</h2><p>识别到 ${preview.members.length} 位成员、${preview.weeks.length} 个完整周次；定位周次为 ${esc(fmtDate(preview.anchorWeekStart))}。</p></div></div><div class="table-scroll"><table class="attendance-table"><thead><tr><th>周一</th><th>周日</th><th>成员数</th><th>全队正班工时合计</th></tr></thead><tbody>${preview.weeks.map(week=>`<tr><td>${esc(week.weekStart)}</td><td>${esc(week.weekDates[6])}</td><td>${week.records.length}</td><td><strong>${week.totalHours.toFixed(2)}</strong></td></tr>`).join("")}</tbody></table></div><h3 class="attendance-preview-heading">定位周次人员匹配预览 · ${esc(previewWeek.weekStart)}</h3><div class="table-scroll"><table class="attendance-table"><thead><tr><th>姓名（表格）</th><th>学号</th><th>匹配成员账号</th>${weekdays.map((day,index)=>`<th>${DAY_NAMES[index]}<small>${esc(day)}</small></th>`).join("")}<th>周合计</th></tr></thead><tbody>${previewWeek.records.map((record,index)=>`<tr><td>${esc(record.name)}</td><td>${esc(record.employeeId)}</td><td><select data-attendance-map="${index}"><option value="">请选择成员</option>${members.map(member=>`<option value="${member.id}" ${Number(record.userId)===member.id?"selected":""}>${esc(member.name)} · ${esc(member.username)}</option>`).join("")}</select></td>${record.daily.map(day=>`<td>${Number(day.hours).toFixed(2)}</td>`).join("")}<td><strong>${record.totalHours.toFixed(2)}</strong></td></tr>`).join("")}</tbody></table></div><div class="attendance-confirm"><button class="primary-button" data-action="import-attendance">确认导入 ${preview.weeks.length} 周工时</button></div></section>` : ""}
     <section class="card section-card"><div class="section-head"><div><div class="kicker">WEEKLY OVERVIEW</div><h2>所选周次正班工时</h2><p>${importedLabel}</p></div><strong class="attendance-total">${attendance.rows.length} 人</strong></div>${attendance.imported ? `<div class="table-scroll"><table class="attendance-table"><thead><tr><th>成员</th><th>学号</th>${weekdays.map((day,index)=>`<th>${DAY_NAMES[index]}<small>${esc(day)}</small></th>`).join("")}<th>合计小时</th></tr></thead><tbody>${attendance.rows.map(row=>`<tr><td>${esc(row.name)}</td><td>${esc(row.username)}</td>${row.daily.map(day=>`<td>${Number(day.hours).toFixed(2)}</td>`).join("")}<td><strong>${row.totalHours.toFixed(2)}</strong></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty-state">导入后会显示每位成员每天的正班时长和周合计。</div>`}</section>
-    <section class="card section-card"><div class="section-head"><div><div class="kicker">HISTORICAL EXPORT</div><h2>导出历史周次统计</h2><p>勾选一个或多个已导入周次，导出每位成员各周正班小时数及总计。</p></div></div>${historical.length ? `<div class="attendance-week-list">${historical.map(week=>`<label><input type="checkbox" name="attendanceWeeks" value="${week.id}" ${week.id===state.bootstrap.week.id?"checked":""}><span>${esc(fmtDate(week.weekStart))} 起</span></label>`).join("")}</div><button class="secondary-button" data-action="export-attendance">导出选中周次 CSV</button>` : `<div class="empty-state">还没有可导出的历史工时数据。</div>`}</section>`;
+    <section class="card section-card"><div class="section-head"><div><div class="kicker">MULTI-WEEK SUMMARY</div><h2>多周正班工时汇总</h2><p>已自动汇总所选周次；勾选或取消周次，下方每人合计会即时更新。</p></div><strong class="attendance-total">${selectedHistory.length} 周</strong></div>${history.length ? `<div class="attendance-week-actions"><button class="text-button" data-action="select-attendance-weeks" data-mode="all">全选周次</button><button class="text-button" data-action="select-attendance-weeks" data-mode="none">清空选择</button></div><div class="attendance-week-list">${history.map(week=>`<label><input type="checkbox" name="attendanceWeeks" value="${week.id}" ${selected.has(week.id)?"checked":""}><span>${esc(fmtDate(week.weekStart))} 周</span></label>`).join("")}</div>${selectedHistory.length ? `<div class="table-scroll"><table class="attendance-table"><thead><tr><th>成员</th><th>账号</th>${selectedHistory.map(week=>`<th>${esc(fmtDate(week.weekStart))}<small>起的一周</small></th>`).join("")}<th>所选周次总计</th></tr></thead><tbody>${[...summaryMembers.values()].sort((a,b)=>a.name.localeCompare(b.name,'zh-CN')).map(member=>`<tr><td>${esc(member.name)}</td><td>${esc(member.username)}</td>${selectedHistory.map(week=>`<td>${member.hours.has(week.id)?Number(member.hours.get(week.id)).toFixed(2):"—"}</td>`).join("")}<td><strong>${member.totalHours.toFixed(2)}</strong></td></tr>`).join("")}</tbody></table></div><div class="attendance-confirm"><button class="secondary-button" data-action="export-attendance">导出所选周次 CSV</button></div>` : `<div class="empty-state">请至少勾选一个周次查看汇总。</div>`}` : `<div class="empty-state">导入考勤表后，完整周次会自动出现在这里。</div>`}</section>`;
 }
 
 function renderPublishedSchedule() {
@@ -369,7 +378,7 @@ async function handleSubmit(form) {
       const file = data.get("report");
       if (!file || !file.size) throw new Error("请选择考勤统计表文件");
       if (file.size > 5_000_000) throw new Error("文件过大，请选择小于 5 MB 的报表");
-      const parsed = parseAttendanceReport(await file.text(), data.get("reportStartDate"), state.bootstrap.week.weekStart);
+      const parsed = parseAttendanceReport(await file.text(), state.bootstrap.week.weekStart);
       const members = state.bootstrap.members;
       const used = new Set();
       for (const record of parsed.records) {
@@ -383,7 +392,9 @@ async function handleSubmit(form) {
           used.add(record.userId);
         } else record.userId = "";
       }
-      state.attendancePreview = { ...parsed, sourceName: file.name };
+      const mappings = new Map(parsed.records.map(record => [record.employeeId, record.userId]));
+      for (const week of parsed.weeks) for (const record of week.records) record.userId = mappings.get(record.employeeId) || "";
+      state.attendancePreview = { ...parsed, anchorWeekStart: state.bootstrap.week.weekStart, sourceName: file.name };
       renderApp();
       toast("报表读取完成，请核对人员匹配后确认导入");
     }
@@ -409,15 +420,23 @@ async function action(button) {
       if (ids.some(id => !Number.isInteger(id) || id <= 0)) throw new Error("请先为每一行选择对应成员");
       if (new Set(ids).size !== ids.length) throw new Error("同一成员被重复匹配，请检查后再导入");
       button.disabled = true;
-      await api("/api/admin/attendance/import", { method: "POST", body: JSON.stringify({
-        weekId: state.weekId,
+      const result = await api("/api/admin/attendance/import-range", { method: "POST", body: JSON.stringify({
+        anchorWeekId: state.weekId,
         reportStartDate: state.attendancePreview.reportStartDate,
         sourceName: state.attendancePreview.sourceName || "考勤统计表",
-        records: records.map(record => ({ userId: Number(record.userId), daily: record.daily })),
+        weeks: state.attendancePreview.weeks.map(week => ({
+          weekStart: week.weekStart,
+          records: week.records.map(record => ({ userId: Number(record.userId), daily: record.daily })),
+        })),
       }) });
       state.attendancePreview = null;
+      state.attendanceSelectedWeeks = null;
       await refreshData();
-      toast(`已导入 ${records.length} 位成员的正班工时`);
+      toast(`已导入 ${result.importedWeeks.length} 个周次的正班工时`);
+    } else if (name === "select-attendance-weeks") {
+      const history = state.bootstrap.attendanceHistory || [];
+      state.attendanceSelectedWeeks = button.dataset.mode === "all" ? new Set(history.map(week => week.id)) : new Set();
+      renderApp();
     } else if (name === "export-attendance") {
       const weekIds = [...document.querySelectorAll('[name="attendanceWeeks"]:checked')].map(input => input.value);
       if (!weekIds.length) throw new Error("请至少选择一个已导入周次");
@@ -517,8 +536,20 @@ root.addEventListener("change", async event => {
     return;
   }
   if (event.target.matches("[data-attendance-map]")) {
-    const record = state.attendancePreview?.records[Number(event.target.dataset.attendanceMap)];
-    if (record) record.userId = event.target.value ? Number(event.target.value) : "";
+    const preview = state.attendancePreview;
+    const record = preview?.records[Number(event.target.dataset.attendanceMap)];
+    if (record) {
+      record.userId = event.target.value ? Number(event.target.value) : "";
+      for (const week of preview.weeks) {
+        const weeklyRecord = week.records.find(item => item.employeeId === record.employeeId);
+        if (weeklyRecord) weeklyRecord.userId = record.userId;
+      }
+    }
+    return;
+  }
+  if (event.target.matches('[name="attendanceWeeks"]')) {
+    state.attendanceSelectedWeeks = new Set([...document.querySelectorAll('[name="attendanceWeeks"]:checked')].map(input => Number(input.value)));
+    renderApp();
     return;
   }
   const card = event.target.closest(".shift-card");

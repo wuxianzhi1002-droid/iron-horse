@@ -25,9 +25,9 @@ function parseTableRows(html) {
 }
 
 function isoUtcDate(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) throw new Error("请填写报表第一天的日期");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) throw new Error("请选择有效的定位周次");
   const date = new Date(`${value}T00:00:00Z`);
-  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new Error("报表第一天不是有效日期");
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new Error("定位周次不是有效日期");
   return date;
 }
 
@@ -46,7 +46,7 @@ function parseDuration(value, day, name) {
   return hours;
 }
 
-export function parseAttendanceReport(html, reportStartDate, weekStart) {
+export function parseAttendanceReport(html, weekStart) {
   if (!/<table\b/i.test(html)) throw new Error("该文件不是可识别的网页版 Excel 考勤表");
   const rows = parseTableRows(html);
   if (rows.length < 4 || !rows[0].length || rows[1].length < 2) throw new Error("考勤表结构不完整");
@@ -56,30 +56,39 @@ export function parseAttendanceReport(html, reportStartDate, weekStart) {
     if (!match) throw new Error(`日期列第 ${index + 1} 列无法识别：${label || "空白"}`);
     return { day: Number(match[1]), weekday: match[2] === "天" ? "日" : match[2] };
   });
-  if (dateHeaders.length < 7) throw new Error("报表中的日期列不足一周");
+  if (dateHeaders.length < 7 || dateHeaders.length > 200) throw new Error("报表日期范围需在 7 到 200 天之间");
   if (!rows[1].some((value) => value === "正班") || !rows[1].some((value) => value === "加班")) {
     throw new Error("表格未找到“正班/加班”类别行");
   }
 
-  const firstDate = isoUtcDate(reportStartDate);
   const selectedMonday = isoUtcDate(weekStart);
   if (selectedMonday.getUTCDay() !== 1) throw new Error("所选周次不是从周一开始");
-
-  const dates = dateHeaders.map((header, index) => {
+  const candidates = [];
+  for (let anchorIndex = 0; anchorIndex < dateHeaders.length; anchorIndex += 1) {
+    if (dateHeaders[anchorIndex].weekday !== "一" || dateHeaders[anchorIndex].day !== selectedMonday.getUTCDate()) continue;
+    const firstDate = addDays(selectedMonday, -anchorIndex);
+    const dates = dateHeaders.map((header, index) => {
+      const date = addDays(firstDate, index);
+      return header.day === date.getUTCDate() && header.weekday === WEEKDAY_LABELS[date.getUTCDay()]
+        ? date.toISOString().slice(0, 10)
+        : null;
+    });
+    if (dates.every(Boolean)) candidates.push({ firstDate, dates });
+  }
+  if (!candidates.length) throw new Error("无法根据所选周次与报表日期、星期匹配日期范围；请选择报表覆盖到的完整周次");
+  if (candidates.length > 1) throw new Error("报表日期可能对应多个年份，请缩短报表范围或确认表格中的周次");
+  const { firstDate, dates } = candidates[0];
+  const weekGroups = [];
+  for (let index = 0; index + 6 < dates.length; index += 1) {
     const date = addDays(firstDate, index);
-    const actualDay = date.getUTCDate();
-    const actualWeekday = WEEKDAY_LABELS[date.getUTCDay()];
-    if (header.day !== actualDay || header.weekday !== actualWeekday) {
-      throw new Error(`报表日期与起始日期不符：第 ${index + 1} 个日期列应为 ${actualDay} ${actualWeekday}`);
-    }
-    return date.toISOString().slice(0, 10);
-  });
+    if (date.getUTCDay() !== 1) continue;
+    weekGroups.push({ weekStart: dates[index], dateIndexes: Array.from({ length: 7 }, (_, day) => index + day) });
+  }
+  if (!weekGroups.length) throw new Error("报表中没有完整的周一至周日数据");
+  const anchorWeek = weekGroups.find(group => group.weekStart === weekStart);
+  if (!anchorWeek) throw new Error("所选周次不在报表覆盖的完整周次内");
 
-  const weekDates = Array.from({ length: 7 }, (_, index) => addDays(selectedMonday, index).toISOString().slice(0, 10));
-  const dateIndexes = weekDates.map((date) => dates.indexOf(date));
-  if (dateIndexes.some((index) => index < 0)) throw new Error("报表日期范围未覆盖所选周次的完整七天");
-
-  const records = [];
+  const allRecords = [];
   for (let index = 2; index < rows.length; index += 2) {
     const regularRow = rows[index];
     const overtimeRow = rows[index + 1] || [];
@@ -90,12 +99,23 @@ export function parseAttendanceReport(html, reportStartDate, weekStart) {
     if (regularRow.length !== dateHeaders.length + 4 || overtimeRow.length !== dateHeaders.length + 1) {
       throw new Error(`${name}的正班/加班数据列数与日期列不一致`);
     }
-    const daily = dateIndexes.map((columnIndex, dayIndex) => ({
-      date: weekDates[dayIndex],
-      hours: parseDuration(regularRow[columnIndex + 4], weekDates[dayIndex], name),
+    const daily = dates.map((date, dayIndex) => ({
+      date,
+      hours: parseDuration(regularRow[dayIndex + 4], date, name),
     }));
-    records.push({ employeeId, name, daily, totalHours: daily.reduce((sum, item) => sum + item.hours, 0) });
+    allRecords.push({ employeeId, name, daily });
   }
-  if (!records.length) throw new Error("报表中没有找到队员工时记录");
-  return { reportStartDate, weekStart, weekDates, records };
+  if (!allRecords.length) throw new Error("报表中没有找到队员工时记录");
+  const weeks = weekGroups.map(group => {
+    const weekDates = group.dateIndexes.map(dateIndex => dates[dateIndex]);
+    const records = allRecords.map(record => {
+      const daily = group.dateIndexes.map(dateIndex => record.daily[dateIndex]);
+      return { employeeId: record.employeeId, name: record.name, daily, totalHours: daily.reduce((sum, item) => sum + item.hours, 0) };
+    });
+    return { weekStart: group.weekStart, weekDates, records, totalHours: records.reduce((sum, record) => sum + record.totalHours, 0) };
+  });
+  const partialStart = dateHeaders.findIndex((_, index) => addDays(firstDate, index).getUTCDay() === 1);
+  const lastDate = addDays(firstDate, dateHeaders.length - 1);
+  const partialEnd = lastDate.getUTCDay() === 0 ? 0 : 6 - ((lastDate.getUTCDay() + 6) % 7);
+  return { reportStartDate: firstDate.toISOString().slice(0, 10), weekStart, weeks, members: allRecords.map(record => ({ employeeId: record.employeeId, name: record.name })), records: anchorWeek ? weeks.find(week => week.weekStart === weekStart).records : [], partialStart, partialEnd };
 }

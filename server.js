@@ -351,6 +351,7 @@ function weekPayload(weekId, user) {
     response.audit = db.prepare("SELECT a.action, a.object_type AS objectType, a.details_json AS detailsJson, a.created_at AS createdAt, u.display_name AS actorName FROM audit_logs a JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 20").all().map(row => ({ ...row, details: JSON.parse(row.detailsJson) }));
     response.versions = db.prepare("SELECT p.id,p.created_at AS createdAt,u.display_name AS publisher FROM schedule_publications p JOIN users u ON u.id=p.published_by WHERE p.week_id=? ORDER BY p.id DESC LIMIT 10").all(weekId);
     response.attendance = attendancePayload(weekId);
+    response.attendanceHistory = attendanceHistoryPayload();
   } else {
     response.requests = db.prepare(`SELECT r.id, r.type, r.reason, r.status, r.submitted_at AS submittedAt, s.day_index AS dayIndex, s.period, s.starts_at AS startsAt FROM requests r JOIN shifts s ON s.id=r.shift_id WHERE r.week_id=? AND r.user_id=? ORDER BY r.submitted_at DESC`).all(weekId, user.id).map(row => ({ ...row, day: DAYS[row.dayIndex] }));
   }
@@ -370,6 +371,17 @@ function attendancePayload(weekId) {
     member.totalHours += row.regularHours;
   }
   return { imported: { reportStartDate: imported.reportStartDate, sourceName: imported.sourceName, importedAt: imported.importedAt }, rows: [...grouped.values()] };
+}
+
+function attendanceHistoryPayload() {
+  const importedWeeks = db.prepare(`SELECT i.id AS importId,i.week_id AS id,w.week_start AS weekStart
+    FROM attendance_imports i JOIN weeks w ON w.id=i.week_id WHERE i.is_current=1 ORDER BY w.week_start`).all();
+  return importedWeeks.map(week => ({
+    id: week.id,
+    weekStart: week.weekStart,
+    members: db.prepare(`SELECT r.user_id AS userId,u.username,u.display_name AS name,ROUND(SUM(r.regular_hours),2) AS hours
+      FROM attendance_records r JOIN users u ON u.id=r.user_id WHERE r.import_id=? GROUP BY r.user_id ORDER BY u.display_name`).all(week.importId),
+  }));
 }
 
 function writeAudit(actorId, action, objectType, objectId, details = {}) {
@@ -601,6 +613,66 @@ async function handleApi(req, res, url) {
   }
 
   if (path.startsWith("/api/admin/")) requireAdmin(user);
+
+  if (method === "POST" && path === "/api/admin/attendance/import-range") {
+    const body = await readJson(req);
+    const anchorWeekId = Number(body.anchorWeekId);
+    const anchorWeek = db.prepare("SELECT id,week_start AS weekStart FROM weeks WHERE id=?").get(anchorWeekId);
+    if (!anchorWeek) throw Object.assign(new Error("找不到所选定位周次"), { status: 404 });
+    const reportStartDate = String(body.reportStartDate || "");
+    const parsedReportStart = /^\d{4}-\d{2}-\d{2}$/.test(reportStartDate) ? new Date(`${reportStartDate}T00:00:00Z`) : null;
+    if (!parsedReportStart || Number.isNaN(parsedReportStart.getTime()) || parsedReportStart.toISOString().slice(0, 10) !== reportStartDate) throw Object.assign(new Error("报表日期无效"), { status: 400 });
+    const importedWeeks = body.weeks;
+    if (!Array.isArray(importedWeeks) || importedWeeks.length < 1 || importedWeeks.length > 30) throw Object.assign(new Error("报表中完整周次数量无效"), { status: 400 });
+    const normalizedWeeks = [];
+    let roster = null;
+    for (const item of importedWeeks) {
+      const weekStart = String(item.weekStart || "");
+      const monday = /^\d{4}-\d{2}-\d{2}$/.test(weekStart) ? new Date(`${weekStart}T00:00:00Z`) : null;
+      if (!monday || Number.isNaN(monday.getTime()) || monday.toISOString().slice(0, 10) !== weekStart || monday.getUTCDay() !== 1) throw Object.assign(new Error("每个导入周次必须从周一开始"), { status: 400 });
+      const dates = Array.from({ length: 7 }, (_, index) => {
+        const date = new Date(monday);
+        date.setUTCDate(date.getUTCDate() + index);
+        return date.toISOString().slice(0, 10);
+      });
+      if (!Array.isArray(item.records) || item.records.length < 1 || item.records.length > 200) throw Object.assign(new Error("每周成员数量无效"), { status: 400 });
+      const ids = new Set();
+      for (const row of item.records) {
+        const userId = Number(row.userId);
+        if (!Number.isInteger(userId) || ids.has(userId) || !db.prepare("SELECT id FROM users WHERE id=? AND role='student'").get(userId)) throw Object.assign(new Error("人员匹配缺失或重复，请检查预览"), { status: 400 });
+        ids.add(userId);
+        if (!Array.isArray(row.daily) || row.daily.length !== 7 || row.daily.some((day, index) => day.date !== dates[index] || !Number.isFinite(Number(day.hours)) || Number(day.hours) < 0 || Number(day.hours) > 24)) throw Object.assign(new Error("工时数据必须覆盖该周周一至周日，且每日在 0 到 24 小时之间"), { status: 400 });
+      }
+      const sortedIds = [...ids].sort((a, b) => a - b);
+      if (roster && (roster.length !== sortedIds.length || roster.some((id, index) => id !== sortedIds[index]))) throw Object.assign(new Error("不同周次的人员匹配不一致"), { status: 400 });
+      roster = sortedIds;
+      const previous = normalizedWeeks.at(-1);
+      if (previous) {
+        const expected = new Date(`${previous.weekStart}T00:00:00Z`);
+        expected.setUTCDate(expected.getUTCDate() + 7);
+        if (expected.toISOString().slice(0, 10) !== weekStart) throw Object.assign(new Error("导入周次必须连续排列"), { status: 400 });
+      }
+      normalizedWeeks.push({ weekStart, records: item.records });
+    }
+    if (!normalizedWeeks.some(item => item.weekStart === anchorWeek.weekStart)) throw Object.assign(new Error("所选定位周次不在导入范围内"), { status: 400 });
+    const sourceName = requireText(body.sourceName, "文件名", 160).replace(/[\\/\r\n]/g, "_");
+    const importBatch = transaction(() => {
+      const importIds = [];
+      for (const item of normalizedWeeks) {
+        db.prepare("INSERT INTO weeks(week_start,enrollment_deadline) VALUES(?,?) ON CONFLICT(week_start) DO NOTHING").run(item.weekStart, defaultEnrollmentDeadline(item.weekStart));
+        const week = db.prepare("SELECT id FROM weeks WHERE week_start=?").get(item.weekStart);
+        db.prepare("UPDATE attendance_imports SET is_current=0 WHERE week_id=? AND is_current=1").run(week.id);
+        const result = db.prepare("INSERT INTO attendance_imports(week_id,report_start_date,source_name,uploaded_by) VALUES(?,?,?,?)").run(week.id, reportStartDate, sourceName, user.id);
+        const importId = Number(result.lastInsertRowid);
+        const insert = db.prepare("INSERT INTO attendance_records(import_id,user_id,work_date,regular_hours) VALUES(?,?,?,?)");
+        for (const row of item.records) for (const day of row.daily) insert.run(importId, Number(row.userId), day.date, Number(day.hours));
+        importIds.push(importId);
+      }
+      return importIds;
+    })();
+    writeAudit(user.id, "import_attendance", "attendance_range", anchorWeekId, { weekCount: importBatch.length, memberCount: roster.length, sourceName });
+    return send(res, 201, { ok: true, importedWeeks: normalizedWeeks.map(item => item.weekStart) });
+  }
 
   if (method === "POST" && path === "/api/admin/attendance/import") {
     const body = await readJson(req);
