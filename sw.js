@@ -1,8 +1,8 @@
-const CACHE_NAME = "iron-horse-shell-v13";
+const CACHE_NAME = "iron-horse-shell-v14";
 const SHELL = [
   "/",
   "/index.html",
-  "/styles.css?v=10",
+  "/styles.css?v=11",
   "/app.js?v=13",
   "/manifest.webmanifest",
   "/icons/iron-horse.svg",

@@ -5,3 +5,4 @@
 .member-card .tech-toggle{min-height:32px;padding:0 10px;font-size:11px;flex:none}
 .day-member.own-member,.member-pill.own-member{background:#f8e0de;color:#a43a32;font-weight:700}
 .lead-tech-field{display:grid;gap:5px;margin-top:10px;color:#5d705f;font-size:11px;font-weight:600}.lead-tech-field select{width:100%;min-height:36px;border:1px solid #dfe8df;border-radius:7px;background:#fbfcfa;padding:0 9px;color:#45584a;font-size:12px}.lead-tech-help{margin:5px 0 0;color:#8a978d;font-size:10px;line-height:1.5}
+@media(max-width:700px){.topbar{height:calc(58px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));padding:var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) 15px 0}}
