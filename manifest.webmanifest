@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "铁马驿站排班中心",
-  "short_name": "铁马排班",
+  "name": "铁马驿站",
+  "short_name": "铁马驿站",
   "description": "铁马驿站值班报名、排班与请假补班",
   "lang": "zh-CN",
   "dir": "ltr",

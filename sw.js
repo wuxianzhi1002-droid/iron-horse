@@ -1,4 +1,4 @@
-const CACHE_NAME = "iron-horse-shell-v14";
+const CACHE_NAME = "iron-horse-shell-v15";
 const SHELL = [
   "/",
   "/index.html",

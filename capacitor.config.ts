@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'asia.wuxianzhi.ironhorse',
-  appName: '铁马驿站排班中心',
+  appName: '铁马驿站',
   plugins: {
     SystemBars: {
       insetsHandling: 'css',

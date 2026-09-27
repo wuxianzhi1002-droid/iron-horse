@@ -90,6 +90,6 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk iron-horse.apk
           gh release create "$RELEASE_TAG" iron-horse.apk \
             --target "$GITHUB_SHA" \
-            --title "铁马驿站排班中心 $APP_VERSION" \
+            --title "铁马驿站 $APP_VERSION" \
             --generate-notes \
             --latest
