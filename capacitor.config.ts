@@ -3,6 +3,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'asia.wuxianzhi.ironhorse',
   appName: '铁马驿站排班中心',
+  appendUserAgent: ' IronHorseRoster/1.0.0',
   webDir: 'mobile-shell',
   server: {
     url: 'https://39.105.143.3',

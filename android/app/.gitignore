@@ -1,2 +1,3 @@
+/release-key.p12
 /build/*
 !/build/.npmkeep

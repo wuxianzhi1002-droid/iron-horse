@@ -2,7 +2,10 @@ const root = document.querySelector("#root");
 const dialog = document.querySelector("#dialog");
 const toastNode = document.querySelector("#toast");
 const DAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const state = { user: null, needsSetup: false, page: "", bootstrap: null, weekId: null, requestFilter: "pending" };
+const APP_VERSION = navigator.userAgent.match(/IronHorseRoster\/(\d+(?:\.\d+){1,2})/)?.[1] || null;
+const GITHUB_RELEASES_API = "https://api.github.com/repos/wuxianzhi1002-droid/iron-horse/releases/latest";
+const GITHUB_LATEST_APK = "https://github.com/wuxianzhi1002-droid/iron-horse/releases/latest/download/iron-horse.apk";
+const state = { user: null, needsSetup: false, page: "", bootstrap: null, weekId: null, requestFilter: "pending", appRelease: null, appReleaseStatus: "idle", appReleaseError: "" };
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
@@ -105,9 +108,9 @@ function renderLogin() {
 }
 
 const navFor = role => role === "admin" ? [
-  ["dashboard", "总览", "◫"], ["schedule", "排班编制", "▦"], ["enrollments", "报名管理", "◷"], ["requests", "请假补班审批", "⇄"], ["members", "成员管理", "♙"], ["audit", "操作记录", "≋"],
+  ["dashboard", "总览", "◫"], ["schedule", "排班编制", "▦"], ["enrollments", "报名管理", "◷"], ["requests", "请假补班审批", "⇄"], ["members", "成员管理", "♙"], ["audit", "操作记录", "≋"], ["app-updates", "应用更新", "↓"],
 ] : [
-  ["schedule", "整体排班", "▦"], ["enrollment", "我的空闲报名", "◷"], ["my-requests", "我的请假补班", "⇄"],
+  ["schedule", "整体排班", "▦"], ["enrollment", "我的空闲报名", "◷"], ["my-requests", "我的请假补班", "⇄"], ["app-updates", "应用更新", "↓"],
 ];
 
 function pageTitle() {
@@ -129,7 +132,7 @@ function renderApp() {
       : item.status === "published" ? "已发布" : "编排中";
     return `<option value="${item.id}" ${item.id === week.id ? "selected" : ""}>${label} · ${esc(fmtDate(item.weekStart))} · ${details}</option>`;
   }).join("");
-  root.innerHTML = `<div class="app"><aside class="sidebar"><div class="brand"><span class="brand-mark"><i></i><i></i><i></i></span><span class="brand-copy"><strong>铁马驿站</strong><small>IRON HORSE · ROSTER</small></span></div><div class="nav-caption">${user.role === "admin" ? "工作台" : "我的值班"}</div><nav class="nav-list">${nav.slice(0, user.role === "admin" ? 4 : 3).map(([key, title, icon]) => navButton(key, title, icon, pendingCount)).join("")}</nav>${user.role === "admin" ? `<div class="nav-caption">管理</div><nav class="nav-list">${nav.slice(4).map(([key, title, icon]) => navButton(key, title, icon, pendingCount)).join("")}</nav>` : ""}<div class="sidebar-spacer"></div><div class="sidebar-week"><span>${user.role === "admin" ? "查看周次" : "当前周次"}</span><strong>${esc(fmtDate(week.weekStart))} 周 · ${week.status === "published" ? "已发布" : "编排中"}</strong></div><div class="user-panel"><span class="user-avatar">${esc(user.name.slice(0, 1))}</span><span class="user-meta"><strong>${esc(user.name)}</strong><small>${user.role === "admin" ? "管理员" : "普通同学"}</small></span><button class="logout-button" data-action="logout" title="退出登录">↪</button></div></aside><main class="main"><header class="topbar"><div class="topbar-title"><strong>铁马驿站</strong>　/　${esc(pageTitle())}</div><div class="topbar-right"><select class="week-select" id="weekSelect" aria-label="选择周次">${weekOptions}</select><span class="sync-label"><i></i>自动同步</span></div></header><div class="content" id="pageContent">${isHistory ? `<div class="notice"><span class="notice-icon">↶</span><div><strong>正在查看历史周次（管理员）</strong><p>可以查看、调整并重新发布该周排班；普通同学仍只会看到当前已发布的整体排班。</p></div></div>` : ""}${renderPage()}</div><nav class="mobile-nav ${user.role === "admin" ? "admin-mobile-nav" : "student-mobile-nav"}">${mobileItems.map(([key,title,icon]) => mobileButton(key,title,icon,pendingCount)).join("")}</nav></main></div>`;
+  root.innerHTML = `<div class="app"><aside class="sidebar"><div class="brand"><span class="brand-mark"><i></i><i></i><i></i></span><span class="brand-copy"><strong>铁马驿站</strong><small>IRON HORSE · ROSTER</small></span></div><div class="nav-caption">${user.role === "admin" ? "工作台" : "我的值班"}</div><nav class="nav-list">${nav.slice(0, user.role === "admin" ? 4 : 4).map(([key, title, icon]) => navButton(key, title, icon, pendingCount)).join("")}</nav>${user.role === "admin" ? `<div class="nav-caption">管理</div><nav class="nav-list">${nav.slice(4).map(([key, title, icon]) => navButton(key, title, icon, pendingCount)).join("")}</nav>` : ""}<div class="sidebar-spacer"></div><div class="sidebar-week"><span>${user.role === "admin" ? "查看周次" : "当前周次"}</span><strong>${esc(fmtDate(week.weekStart))} 周 · ${week.status === "published" ? "已发布" : "编排中"}</strong></div><div class="user-panel"><span class="user-avatar">${esc(user.name.slice(0, 1))}</span><span class="user-meta"><strong>${esc(user.name)}</strong><small>${user.role === "admin" ? "管理员" : "普通同学"}</small></span><button class="logout-button" data-action="logout" title="退出登录">↪</button></div></aside><main class="main"><header class="topbar"><div class="topbar-title"><strong>铁马驿站</strong>　/　${esc(pageTitle())}</div><div class="topbar-right"><select class="week-select" id="weekSelect" aria-label="选择周次">${weekOptions}</select><span class="sync-label"><i></i>自动同步</span></div></header><div class="content" id="pageContent">${isHistory ? `<div class="notice"><span class="notice-icon">↶</span><div><strong>正在查看历史周次（管理员）</strong><p>可以查看、调整并重新发布该周排班；普通同学仍只会看到当前已发布的整体排班。</p></div></div>` : ""}${renderPage()}</div><nav class="mobile-nav ${user.role === "admin" ? "admin-mobile-nav" : "student-mobile-nav"}">${mobileItems.map(([key,title,icon]) => mobileButton(key,title,icon,pendingCount)).join("")}</nav></main></div>`;
   root.querySelector(".topbar-right").insertAdjacentHTML("afterbegin", `<button class="header-logout" data-action="logout" title="退出登录" aria-label="退出登录">↪</button>`);
 }
 
@@ -154,14 +157,54 @@ function renderPage() {
       case "requests": return renderAdminRequests();
       case "members": return renderMembers();
       case "audit": return renderAudit();
+      case "app-updates": return renderAppUpdates();
       default: return renderAdminDashboard();
     }
   }
   switch (state.page) {
     case "enrollment": return renderStudentEnrollment();
     case "my-requests": return renderMyRequests();
+    case "app-updates": return renderAppUpdates();
     default: return renderPublishedSchedule();
   }
+}
+
+function compareVersions(left, right) {
+  const a = String(left).replace(/^v/i, "").split(".").map(value => Number.parseInt(value, 10) || 0);
+  const b = String(right).replace(/^v/i, "").split(".").map(value => Number.parseInt(value, 10) || 0);
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) - (b[index] || 0);
+  }
+  return 0;
+}
+
+function renderAppUpdates() {
+  const release = state.appRelease;
+  const isLatest = release && APP_VERSION && compareVersions(APP_VERSION, release.tag_name) >= 0;
+  let result = `<div class="empty-state">点击下方按钮查询 GitHub 上的最新版。</div>`;
+  if (state.appReleaseStatus === "checking") result = `<div class="update-result"><span class="loading-bar"></span><p>正在查询 GitHub 最新版本…</p></div>`;
+  else if (state.appReleaseStatus === "error") result = `<div class="notice"><span class="notice-icon">!</span><div><strong>暂时无法查询版本</strong><p>${esc(state.appReleaseError)}。请检查网络后重试。</p></div></div>`;
+  else if (release && isLatest) result = `<div class="update-result update-current"><span class="update-mark">✓</span><div><strong>当前已是最新版</strong><p>版本 ${esc(release.tag_name)} · 无需更新</p></div></div>`;
+  else if (release) result = `<div class="update-result update-available"><span class="update-mark">↓</span><div><strong>发现新版本 ${esc(release.tag_name)}</strong><p>当前版本 ${esc(APP_VERSION || "旧版/未识别")}。点击下方按钮下载并安装。</p></div></div><a class="primary-button full-width update-download" href="${GITHUB_LATEST_APK}" target="_blank" rel="noopener">下载最新版 Android 安装包 <span>↓</span></a>`;
+  return `${pageHead("应用更新", "检查铁马驿站排班中心的 Android 新版本。", `<button class="primary-button" data-action="check-app-update" ${state.appReleaseStatus === "checking" ? "disabled" : ""}>${state.appReleaseStatus === "checking" ? "查询中…" : "查询最新版本"}</button>`)}<section class="card app-update-card"><div class="app-update-brand"><img src="/icons/iron-horse-192.png" alt="铁马驿站图标"><div><div class="kicker">IRON HORSE · ANDROID</div><h2>铁马驿站排班中心</h2><p>当前安装版本：${esc(APP_VERSION || "网页/PWA 或旧版 App")}</p></div></div><div class="app-update-status">${result}</div><p class="footnote">新版本通过 GitHub 发布。下载后按 Android 提示安装；排班、报名和审批数据仍保存在服务器，不会因更新丢失。</p></section>`;
+}
+
+async function checkLatestAndroidRelease() {
+  state.appReleaseStatus = "checking";
+  state.appReleaseError = "";
+  renderApp();
+  try {
+    const response = await fetch(GITHUB_RELEASES_API, { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" });
+    if (!response.ok) throw new Error(response.status === 404 ? "尚未发布 Android 新版本" : `GitHub 暂不可用 (${response.status})`);
+    const release = await response.json();
+    if (!/^v\d+(?:\.\d+){1,2}$/.test(release.tag_name || "")) throw new Error("最新版本标记格式不正确");
+    state.appRelease = release;
+    state.appReleaseStatus = "ready";
+  } catch (error) {
+    state.appReleaseError = error.message || "网络请求失败";
+    state.appReleaseStatus = "error";
+  }
+  renderApp();
 }
 
 function techSlotOpen(shift) {
@@ -355,8 +398,9 @@ async function action(button) {
       await refreshData(); toast("数据已刷新");
     } else if (name === "export-schedule") exportSchedule();
     else if (name === "new-request") openRequestDialog();
+    else if (name === "check-app-update") await checkLatestAndroidRelease();
     else if (name === "admin-more") {
-      dialog.innerHTML = `<h2>管理功能</h2><p>选择管理页面</p><div class="more-links"><button class="secondary-button" data-page="members">成员管理</button><button class="secondary-button" data-page="audit">操作记录</button></div><div class="dialog-actions"><button class="secondary-button" data-action="close-dialog">关闭</button></div>`;
+      dialog.innerHTML = `<h2>管理功能</h2><p>选择管理页面</p><div class="more-links"><button class="secondary-button" data-page="members">成员管理</button><button class="secondary-button" data-page="audit">操作记录</button><button class="secondary-button" data-page="app-updates">应用更新</button></div><div class="dialog-actions"><button class="secondary-button" data-action="close-dialog">关闭</button></div>`;
       dialog.showModal();
     }
     else if (name === "close-dialog") dialog.close();
@@ -410,6 +454,7 @@ root.addEventListener("click", event => {
   if (page) {
     state.page = page.dataset.page;
     renderApp();
+    if (state.page === "app-updates") checkLatestAndroidRelease();
     return;
   }
   const button = event.target.closest("[data-action]");
@@ -460,7 +505,7 @@ root.addEventListener("change", async event => {
 document.addEventListener("click", event => {
   if (event.target === dialog) dialog.close();
   const page = event.target.closest(".dialog [data-page]");
-  if (page) { dialog.close(); state.page = page.dataset.page; renderApp(); }
+  if (page) { dialog.close(); state.page = page.dataset.page; renderApp(); if (state.page === "app-updates") checkLatestAndroidRelease(); }
   const button = event.target.closest(".dialog [data-action]");
   if (button?.dataset.action === "close-dialog") dialog.close();
 });

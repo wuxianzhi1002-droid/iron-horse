@@ -1,0 +1,96 @@
+name: Publish Android Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, without the leading v
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Resolve release version
+        id: release
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$VERSION_INPUT"
+            tag="v${version#v}"
+          else
+            tag="$GITHUB_REF_NAME"
+            version="${tag#v}"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must use MAJOR.MINOR.PATCH, for example 1.0.1" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Sync Android project
+        run: npx cap sync android
+
+      - name: Prepare persistent signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-key.p12
+
+      - name: Build signed release APK
+        env:
+          APP_VERSION: ${{ steps.release.outputs.version }}
+          APP_VERSION_CODE: ${{ github.run_number }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const path="android/app/src/main/assets/capacitor.config.json"; const config=JSON.parse(fs.readFileSync(path,"utf8")); config.appendUserAgent=` IronHorseRoster/${process.env.APP_VERSION}`; fs.writeFileSync(path,JSON.stringify(config));'
+          cd android
+          bash ./gradlew --no-daemon assembleRelease -PappVersion="$APP_VERSION" -PappVersionCode="$APP_VERSION_CODE"
+
+      - name: Publish APK to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          APP_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk iron-horse.apk
+          gh release create "$RELEASE_TAG" iron-horse.apk \
+            --target "$GITHUB_SHA" \
+            --title "铁马驿站排班中心 $APP_VERSION" \
+            --generate-notes \
+            --latest
