@@ -1,0 +1,25 @@
+[Unit]
+Description=Iron Horse Roster Web App
+After=network.target
+
+[Service]
+Type=simple
+User=ironhorse
+Group=ironhorse
+WorkingDirectory=/srv/iron-horse-roster/current
+Environment=NODE_ENV=production
+Environment=PORT=3101
+Environment=HOST=127.0.0.1
+Environment=DB_PATH=/srv/iron-horse-roster/data/iron-horse.sqlite
+Environment=COOKIE_SECURE=1
+ExecStart=/srv/iron-horse-roster/runtime/node-v22.23.3-linux-x64/bin/node /srv/iron-horse-roster/current/server.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/iron-horse-roster/data
+
+[Install]
+WantedBy=multi-user.target

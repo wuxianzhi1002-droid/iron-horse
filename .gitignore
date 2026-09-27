@@ -1,0 +1,10 @@
+data/
+*.sqlite
+*.sqlite*
+*.sqlite-shm
+*.sqlite-wal
+.env
+node_modules/
+output/
+tmp/
+*.log
