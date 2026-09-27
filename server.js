@@ -101,6 +101,24 @@ db.exec(`
     details_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS attendance_imports (
+    id INTEGER PRIMARY KEY,
+    week_id INTEGER NOT NULL REFERENCES weeks(id),
+    report_start_date TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    uploaded_by INTEGER NOT NULL REFERENCES users(id),
+    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_current INTEGER NOT NULL DEFAULT 1 CHECK(is_current IN (0,1))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_imports_current_week
+    ON attendance_imports(week_id) WHERE is_current=1;
+  CREATE TABLE IF NOT EXISTS attendance_records (
+    import_id INTEGER NOT NULL REFERENCES attendance_imports(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    work_date TEXT NOT NULL,
+    regular_hours REAL NOT NULL CHECK(regular_hours>=0),
+    PRIMARY KEY(import_id,user_id,work_date)
+  );
 `);
 
 const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -218,14 +236,17 @@ function adminWeekOptions(windowWeeks) {
   const historical = db.prepare(`
     SELECT w.id,w.week_start AS weekStart,w.enrollment_deadline AS enrollmentDeadline,w.status,
       EXISTS(SELECT 1 FROM enrollments e WHERE e.week_id=w.id) AS hasEnrollment,
-      EXISTS(SELECT 1 FROM schedule_publications p WHERE p.week_id=w.id) AS hasPublication
+      EXISTS(SELECT 1 FROM schedule_publications p WHERE p.week_id=w.id) AS hasPublication,
+      EXISTS(SELECT 1 FROM attendance_imports i WHERE i.week_id=w.id AND i.is_current=1) AS hasAttendance
     FROM weeks w
     WHERE w.week_start < ? AND (
       EXISTS(SELECT 1 FROM enrollments e WHERE e.week_id=w.id) OR
-      EXISTS(SELECT 1 FROM schedule_publications p WHERE p.week_id=w.id)
+      EXISTS(SELECT 1 FROM schedule_publications p WHERE p.week_id=w.id) OR
+      EXISTS(SELECT 1 FROM attendance_imports i WHERE i.week_id=w.id AND i.is_current=1)
     )
     ORDER BY w.week_start DESC
-  `).all(windowWeeks[0].weekStart).map(week => ({ ...week, kind: "history", hasEnrollment: Boolean(week.hasEnrollment), hasPublication: Boolean(week.hasPublication) }));
+  `).all(windowWeeks[0].weekStart).map(week => ({ ...week, kind: "history", hasEnrollment: Boolean(week.hasEnrollment), hasPublication: Boolean(week.hasPublication), hasAttendance: Boolean(week.hasAttendance) }));
+  for (const week of current) week.hasAttendance = Boolean(db.prepare("SELECT 1 FROM attendance_imports WHERE week_id=? AND is_current=1").get(week.id));
   return [...current, ...historical];
 }
 
@@ -329,10 +350,26 @@ function weekPayload(weekId, user) {
     response.requests = db.prepare(`SELECT r.id, r.type, r.reason, r.status, r.submitted_at AS submittedAt, u.id AS userId, u.display_name AS name, s.id AS shiftId, s.day_index AS dayIndex, s.period, s.starts_at AS startsAt FROM requests r JOIN users u ON u.id=r.user_id JOIN shifts s ON s.id=r.shift_id WHERE r.week_id=? ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.submitted_at DESC`).all(weekId).map(row => ({ ...row, day: DAYS[row.dayIndex] }));
     response.audit = db.prepare("SELECT a.action, a.object_type AS objectType, a.details_json AS detailsJson, a.created_at AS createdAt, u.display_name AS actorName FROM audit_logs a JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 20").all().map(row => ({ ...row, details: JSON.parse(row.detailsJson) }));
     response.versions = db.prepare("SELECT p.id,p.created_at AS createdAt,u.display_name AS publisher FROM schedule_publications p JOIN users u ON u.id=p.published_by WHERE p.week_id=? ORDER BY p.id DESC LIMIT 10").all(weekId);
+    response.attendance = attendancePayload(weekId);
   } else {
     response.requests = db.prepare(`SELECT r.id, r.type, r.reason, r.status, r.submitted_at AS submittedAt, s.day_index AS dayIndex, s.period, s.starts_at AS startsAt FROM requests r JOIN shifts s ON s.id=r.shift_id WHERE r.week_id=? AND r.user_id=? ORDER BY r.submitted_at DESC`).all(weekId, user.id).map(row => ({ ...row, day: DAYS[row.dayIndex] }));
   }
   return response;
+}
+
+function attendancePayload(weekId) {
+  const imported = db.prepare("SELECT id,report_start_date AS reportStartDate,source_name AS sourceName,imported_at AS importedAt FROM attendance_imports WHERE week_id=? AND is_current=1").get(weekId);
+  if (!imported) return { imported: null, rows: [] };
+  const rows = db.prepare(`SELECT r.user_id AS userId,u.username,u.display_name AS name,r.work_date AS workDate,r.regular_hours AS regularHours
+    FROM attendance_records r JOIN users u ON u.id=r.user_id WHERE r.import_id=? ORDER BY u.display_name,r.work_date`).all(imported.id);
+  const grouped = new Map();
+  for (const row of rows) {
+    if (!grouped.has(row.userId)) grouped.set(row.userId, { userId: row.userId, username: row.username, name: row.name, daily: [], totalHours: 0 });
+    const member = grouped.get(row.userId);
+    member.daily.push({ date: row.workDate, hours: row.regularHours });
+    member.totalHours += row.regularHours;
+  }
+  return { imported: { reportStartDate: imported.reportStartDate, sourceName: imported.sourceName, importedAt: imported.importedAt }, rows: [...grouped.values()] };
 }
 
 function writeAudit(actorId, action, objectType, objectId, details = {}) {
@@ -565,6 +602,65 @@ async function handleApi(req, res, url) {
 
   if (path.startsWith("/api/admin/")) requireAdmin(user);
 
+  if (method === "POST" && path === "/api/admin/attendance/import") {
+    const body = await readJson(req);
+    const weekId = Number(body.weekId);
+    const week = db.prepare("SELECT id,week_start AS weekStart FROM weeks WHERE id=?").get(weekId);
+    if (!week) throw Object.assign(new Error("找不到所选周次"), { status: 404 });
+    const startDate = String(body.reportStartDate || "");
+    const parsedStartDate = /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? new Date(`${startDate}T00:00:00Z`) : null;
+    if (!parsedStartDate || Number.isNaN(parsedStartDate.getTime()) || parsedStartDate.toISOString().slice(0, 10) !== startDate) throw Object.assign(new Error("报表第一天日期无效"), { status: 400 });
+    const weekDates = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(`${week.weekStart}T00:00:00Z`);
+      date.setUTCDate(date.getUTCDate() + index);
+      return date.toISOString().slice(0, 10);
+    });
+    const rows = body.records;
+    if (!Array.isArray(rows) || rows.length < 1 || rows.length > 200) throw Object.assign(new Error("导入成员数量无效"), { status: 400 });
+    const seen = new Set();
+    for (const row of rows) {
+      const userId = Number(row.userId);
+      if (!Number.isInteger(userId) || seen.has(userId)) throw Object.assign(new Error("成员未匹配或重复匹配，请检查预览"), { status: 400 });
+      seen.add(userId);
+      if (!db.prepare("SELECT id FROM users WHERE id=? AND role='student'").get(userId)) throw Object.assign(new Error("导入名单中包含无效成员"), { status: 400 });
+      if (!Array.isArray(row.daily) || row.daily.length !== 7 || row.daily.some((day, index) => day.date !== weekDates[index] || !Number.isFinite(Number(day.hours)) || Number(day.hours) < 0 || Number(day.hours) > 24)) {
+        throw Object.assign(new Error("工时记录必须覆盖所选周次的七天，且每日时长在 0 到 24 小时之间"), { status: 400 });
+      }
+    }
+    const sourceName = requireText(body.sourceName, "文件名", 160).replace(/[\\/\r\n]/g, "_");
+    const saveImport = transaction(() => {
+      db.prepare("UPDATE attendance_imports SET is_current=0 WHERE week_id=? AND is_current=1").run(weekId);
+      const result = db.prepare("INSERT INTO attendance_imports(week_id,report_start_date,source_name,uploaded_by) VALUES(?,?,?,?)").run(weekId, startDate, sourceName, user.id);
+      const importId = Number(result.lastInsertRowid);
+      const insert = db.prepare("INSERT INTO attendance_records(import_id,user_id,work_date,regular_hours) VALUES(?,?,?,?)");
+      for (const row of rows) for (const day of row.daily) insert.run(importId, Number(row.userId), day.date, Number(day.hours));
+      return importId;
+    });
+    const importId = saveImport();
+    writeAudit(user.id, "import_attendance", "attendance_week", weekId, { weekStart: week.weekStart, memberCount: rows.length, sourceName });
+    return send(res, 201, { ok: true, importId });
+  }
+
+  if (method === "GET" && path === "/api/admin/attendance/export") {
+    const rawIds = (url.searchParams.get("weeks") || "").split(",").filter(Boolean);
+    const weekIds = [...new Set(rawIds.map(Number))];
+    if (!weekIds.length || weekIds.length > 52 || weekIds.some(id => !Number.isInteger(id) || id <= 0)) throw Object.assign(new Error("请选择有效的历史周次"), { status: 400 });
+    const weeks = [];
+    const members = new Map();
+    for (const weekId of weekIds) {
+      const week = db.prepare("SELECT id,week_start AS weekStart FROM weeks WHERE id=?").get(weekId);
+      const imported = db.prepare("SELECT id FROM attendance_imports WHERE week_id=? AND is_current=1").get(weekId);
+      if (!week || !imported) throw Object.assign(new Error("所选周次尚无已导入工时，刷新后重试"), { status: 400 });
+      weeks.push(week);
+      for (const row of db.prepare(`SELECT r.user_id AS userId,u.username,u.display_name AS name,SUM(r.regular_hours) AS hours
+        FROM attendance_records r JOIN users u ON u.id=r.user_id WHERE r.import_id=? GROUP BY r.user_id`).all(imported.id)) {
+        if (!members.has(row.userId)) members.set(row.userId, { userId: row.userId, username: row.username, name: row.name, hoursByWeek: {} });
+        members.get(row.userId).hoursByWeek[weekId] = row.hours;
+      }
+    }
+    return send(res, 200, { weeks, members: [...members.values()] });
+  }
+
   if (method === "POST" && path === "/api/admin/members") {
     const body = await readJson(req);
     const name = requireText(body.name, "成员姓名", 60);
@@ -698,7 +794,7 @@ async function handleApi(req, res, url) {
 }
 
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
-const PUBLIC_FILES = new Set(["index.html", "styles.css", "app.js", "sw.js", "manifest.webmanifest", "icons/iron-horse.svg", "icons/iron-horse-180.png", "icons/iron-horse-192.png", "icons/iron-horse-512.png"]);
+const PUBLIC_FILES = new Set(["index.html", "styles.css", "app.js", "attendance-import.js", "sw.js", "manifest.webmanifest", "icons/iron-horse.svg", "icons/iron-horse-180.png", "icons/iron-horse-192.png", "icons/iron-horse-512.png"]);
 function serveStatic(req, res, pathname) {
   const requested = decodeURIComponent(pathname === "/" ? "/index.html" : pathname);
   const relative = normalize(requested).replace(/^[/\\]+/, "").replaceAll("\\", "/");
