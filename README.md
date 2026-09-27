@@ -24,6 +24,10 @@ npm start
 
 项目包含 PWA 应用清单、铁马驿站风格图标和只缓存静态外壳的 Service Worker。正式安装需要 HTTPS；Android 可在 Chrome 菜单中选择“安装应用/添加到主屏幕”，iPhone 可在 Safari 分享菜单中选择“添加到主屏幕”。API 与个人报名/申请数据不会被离线缓存，排班变更仍需联网。
 
+### Android 安装包
+
+Android 原生容器由 Capacitor 构建，应用打开后连接 `capacitor.config.ts` 中配置的线上 HTTPS 服务；服务器仍需保持在线。向 `main` 推送 Android 工程、Capacitor 配置或依赖变更后，GitHub Actions 会构建 APK；也可在仓库 Actions 页面手动运行 `Build Android APK`。构建完成后，在对应运行记录的 Artifacts 下载 `iron-horse-android-debug` 并解压安装。当前产物是用于测试/内部安装的 debug APK，不是 Google Play 发布包；后续正式分发应使用长期保管的发布签名密钥构建 release APK/AAB。
+
 ## 权限和数据可见范围
 
 - 同学只能读取整体已发布排班、本人空闲报名和本人请假/补班申请。

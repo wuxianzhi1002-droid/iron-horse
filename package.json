@@ -5,7 +5,18 @@
   "type": "module",
   "description": "铁马驿站排班与请假补班管理",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "android:sync": "cap sync android",
+    "android:open": "cap open android",
+    "android:debug": "cap run android"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.0.0",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/core": "^8.0.0"
   },
   "engines": {
     "node": ">=22.13.0"
