@@ -26,7 +26,7 @@ npm start
 
 ### Android 安装包
 
-Android 原生容器由 Capacitor 构建，应用打开后连接 `capacitor.config.ts` 中配置的线上 HTTPS 服务；服务器仍需保持在线。推送 Android 工程或依赖变更会由 GitHub Actions 构建测试 APK。正式版本在 GitHub Actions 手动运行 `Publish Android Release` 并填写语义版本号（例如 `1.0.1`），或推送 `v*` 标签后构建；构建出的签名 APK 自动发布到 GitHub Releases，固定下载地址为 `https://github.com/wuxianzhi1002-droid/iron-horse/releases/latest/download/iron-horse.apk`。应用内“应用更新”页会查询最新 Release：已是最新版时不显示下载入口，新版本可用时才显示下载按钮。发布工作流需要仓库 Actions Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`；签名密钥必须妥善备份且以后不可更换，否则 Android 会拒绝覆盖更新。现在已安装的首个 debug 测试版与正式签名版签名不同，切换到首个正式版时需先卸载测试版一次；此后版本可直接覆盖更新。数据保存在服务器，不会因卸载 App 而丢失。
+Android 原生容器由 Capacitor 构建，应用打开后连接 `capacitor.config.ts` 中配置的线上 HTTPS 服务；服务器仍需保持在线。排班系统界面由服务器提供，网页更新后 App 下次加载即可使用新版，无需为常规界面和排班功能更新重新安装 APK。只有 Android 原生容器或本地能力发生变化时才需要发布新 APK。推送 Android 工程或依赖变更会由 GitHub Actions 构建测试 APK。正式版本在 GitHub Actions 手动运行 `Publish Android Release` 并填写语义版本号（例如 `1.0.2`），或推送 `v*` 标签后构建；签名 APK 自动发布到 GitHub Releases。发布工作流需要仓库 Actions Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`；签名密钥必须妥善备份且以后不可更换，否则 Android 会拒绝覆盖更新。切换当前 debug 测试版至正式签名版时需先卸载测试版一次；此后正式版之间可直接覆盖更新。数据保存在服务器，不会因卸载 App 而丢失。
 
 ## 权限和数据可见范围
 

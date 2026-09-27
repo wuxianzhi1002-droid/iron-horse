@@ -78,7 +78,6 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          node --input-type=module -e 'import fs from "node:fs"; const path="android/app/src/main/assets/capacitor.config.json"; const config=JSON.parse(fs.readFileSync(path,"utf8")); config.appendUserAgent=` IronHorseRoster/${process.env.APP_VERSION}`; fs.writeFileSync(path,JSON.stringify(config));'
           cd android
           bash ./gradlew --no-daemon assembleRelease -PappVersion="$APP_VERSION" -PappVersionCode="$APP_VERSION_CODE"
 

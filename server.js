@@ -707,7 +707,7 @@ function serveStatic(req, res, pathname) {
   if (!target.startsWith(resolve(ROOT) + sep)) return send(res, 403, { error: "禁止访问" });
   if (!existsSync(target)) return send(res, 404, { error: "找不到页面" });
   const content = readFileSync(target);
-  const headers = { "Content-Type": MIME[extname(target)] || "application/octet-stream", "Cache-Control": relative === "sw.js" || relative === "manifest.webmanifest" || relative === "index.html" ? "no-cache" : "public, max-age=3600", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'" };
+  const headers = { "Content-Type": MIME[extname(target)] || "application/octet-stream", "Cache-Control": relative === "sw.js" || relative === "manifest.webmanifest" || relative === "index.html" ? "no-cache" : "public, max-age=3600", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" };
   if (relative === "sw.js") headers["Service-Worker-Allowed"] = "/";
   res.writeHead(200, headers);
   res.end(content);
